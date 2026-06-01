@@ -6,6 +6,7 @@ import {
   MindmapDocument,
   MindmapNode,
   touchDocument,
+  updateNode,
 } from "../domain/mindmap";
 
 type ExcalidrawElement = {
@@ -91,7 +92,21 @@ export function parseExcalidrawMindmap(json: unknown): ImportExportResult {
 
   const file = json as ExcalidrawFile;
   if (file.appState?.mindmapToolsDocument) {
-    return { document: file.appState.mindmapToolsDocument, warnings };
+    const textByNodeId = new Map<string, string>();
+    if (Array.isArray(file.elements)) {
+      for (const element of file.elements) {
+        const nodeId = element.customData?.mindmapToolsNodeId;
+        if (typeof nodeId === "string" && typeof element.text === "string") {
+          textByNodeId.set(nodeId, element.text.trim() || "Untitled");
+        }
+      }
+    }
+
+    let document = file.appState.mindmapToolsDocument;
+    for (const [nodeId, title] of textByNodeId) {
+      document = updateNode(document, nodeId, { title });
+    }
+    return { document, warnings };
   }
 
   const textElements = Array.isArray(file.elements)

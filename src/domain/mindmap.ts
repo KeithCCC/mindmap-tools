@@ -83,6 +83,30 @@ export function addNode(document: MindmapDocument, parentId: string, title = "Ne
   return appendNode(document, parentId, createNode(title));
 }
 
+export function addSibling(document: MindmapDocument, nodeId: string, title = "New idea"): { document: MindmapDocument; node: MindmapNode } {
+  if (document.root.id === nodeId) {
+    const node = createNode(title);
+    return { document: appendNode(document, document.root.id, node), node };
+  }
+
+  const sibling = createNode(title);
+  const insert = (node: MindmapNode): MindmapNode => {
+    const index = node.children.findIndex((child) => child.id === nodeId);
+    if (index >= 0) {
+      return {
+        ...node,
+        children: [...node.children.slice(0, index + 1), sibling, ...node.children.slice(index + 1)],
+      };
+    }
+    return {
+      ...node,
+      children: node.children.map(insert),
+    };
+  };
+
+  return { document: touchDocument(document, insert(document.root)), node: sibling };
+}
+
 export function appendNode(document: MindmapDocument, parentId: string, child: MindmapNode): MindmapDocument {
   const root = mapNode(document.root, parentId, (node) => ({
     ...node,

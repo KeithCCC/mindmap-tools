@@ -16,6 +16,25 @@ describe("Excalidraw conversion", () => {
     expect(imported.document.root.children[0].children[0].title).toBe("Interview users");
   });
 
+  it("preserves hierarchy while applying text edits from app-generated elements", () => {
+    let doc = createMindmapDocument("Ideas");
+    doc = addNode(doc, doc.root.id, "Research");
+
+    const exported = serializeExcalidrawMindmap(doc) as {
+      elements: Array<{ text?: string; customData?: { mindmapToolsNodeId?: string } }>;
+      appState: { mindmapToolsDocument: typeof doc };
+    };
+    const researchElement = exported.elements.find(
+      (element) => element.customData?.mindmapToolsNodeId === doc.root.children[0].id,
+    );
+    researchElement!.text = "Customer discovery";
+
+    const imported = parseExcalidrawMindmap(exported);
+
+    expect(imported.document.root.children[0].title).toBe("Customer discovery");
+    expect(imported.document.root.children[0].id).toBe(doc.root.children[0].id);
+  });
+
   it("best-effort imports generic text elements with warnings", () => {
     const imported = parseExcalidrawMindmap({
       type: "excalidraw",

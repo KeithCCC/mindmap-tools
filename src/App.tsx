@@ -23,6 +23,7 @@ import { generateWikiMarkdown, WikiFile } from "./converters/wiki";
 import { MindElixirEditor } from "./components/MindElixirEditor";
 
 const storageKey = "mindmap-tools.document";
+const themeStorageKey = "mindmap-tools.theme";
 
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
@@ -62,6 +63,10 @@ function loadDocument(): MindmapDocument {
     window.localStorage.removeItem(storageKey);
   }
   return createMindmapDocument("Brainstorm");
+}
+
+function loadTheme(): "light" | "dark" {
+  return window.localStorage.getItem(themeStorageKey) === "dark" ? "dark" : "light";
 }
 
 function downloadBlob(fileName: string, blob: Blob) {
@@ -255,9 +260,11 @@ async function readApiJson<T>(response: Response): Promise<T> {
 
 export default function App() {
   const [document, setDocument] = useState<MindmapDocument>(() => loadDocument());
+  const [theme, setTheme] = useState<"light" | "dark">(() => loadTheme());
   const [selectedId, setSelectedId] = useState(document.root.id);
   const [activeTab, setActiveTab] = useState<Tab>("edit");
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
+  const [noteEditorNodeId, setNoteEditorNodeId] = useState<string | null>(null);
   const [inlineEditRequest, setInlineEditRequest] = useState(0);
   const [mermaidInput, setMermaidInput] = useState("mindmap\n  Brainstorm\n    Audience\n    Product\n    Distribution");
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -270,8 +277,10 @@ export default function App() {
   const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
+  const noteEditorRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedNode = findNode(document.root, selectedId) ?? document.root;
+  const noteEditorNode = noteEditorNodeId ? findNode(document.root, noteEditorNodeId) : undefined;
   const mermaidOutput = useMemo(() => serializeMermaidMindmap(document), [document]);
   const dataOutput = useMemo(() => JSON.stringify(document, null, 2), [document]);
   const excalidrawOutput = useMemo(() => JSON.stringify(serializeExcalidrawMindmap(document), null, 2), [document]);
@@ -282,8 +291,27 @@ export default function App() {
   }, [document]);
 
   useEffect(() => {
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
+
+  useEffect(() => {
     if (!findNode(document.root, selectedId)) setSelectedId(document.root.id);
   }, [document, selectedId]);
+
+  useEffect(() => {
+    if (noteEditorNodeId && !findNode(document.root, noteEditorNodeId)) setNoteEditorNodeId(null);
+  }, [document, noteEditorNodeId]);
+
+  useEffect(() => {
+    if (!noteEditorNodeId) return;
+    window.setTimeout(() => {
+      const textarea = noteEditorRef.current;
+      if (!textarea) return;
+      const end = textarea.value.length;
+      textarea.focus();
+      textarea.setSelectionRange(end, end);
+    }, 0);
+  }, [noteEditorNodeId]);
 
   useEffect(() => {
     const isFormField = (target: EventTarget | null) =>
@@ -584,13 +612,16 @@ export default function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <header className="app-header">
         <div>
           <p className="label">Mindmap Tools</p>
           <h1>{document.root.title}</h1>
         </div>
         <div className="header-actions">
+          <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
+            {theme === "dark" ? "Light theme" : "Dark theme"}
+          </button>
           <button type="button" onClick={downloadJson}>
             Download JSON
           </button>
@@ -648,11 +679,15 @@ export default function App() {
             </div>
           </div>
           <MindElixirEditor
+            key={theme}
             document={document}
             selectedNodeId={selectedId}
             inlineEditRequest={inlineEditRequest}
+            theme={theme}
+            showNoteEditorInContextMenu={!isInspectorOpen}
             onDocumentChange={setDocument}
             onSelectedNodeChange={setSelectedId}
+            onEditNodeNotes={setNoteEditorNodeId}
           />
           {isOutlineOpen ? (
             <div className="outline-backdrop" role="presentation" onMouseDown={() => setIsOutlineOpen(false)}>
@@ -692,6 +727,43 @@ export default function App() {
                     />
                   </ul>
                 </div>
+              </section>
+            </div>
+          ) : null}
+          {noteEditorNode ? (
+            <div className="note-editor-backdrop" role="presentation" onMouseDown={() => setNoteEditorNodeId(null)}>
+              <section
+                className="note-editor-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Edit notes for ${noteEditorNode.title}`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="note-editor-header">
+                  <div>
+                    <p className="label">Node properties</p>
+                    <h2>{noteEditorNode.title}</h2>
+                  </div>
+                  <button type="button" onClick={() => setNoteEditorNodeId(null)}>
+                    Close
+                  </button>
+                </div>
+                <label>
+                  Notes
+                  <textarea
+                    ref={noteEditorRef}
+                    aria-label="Popup notes"
+                    value={noteEditorNode.body ?? ""}
+                    rows={16}
+                    onChange={(event) => setDocument((current) => updateNode(current, noteEditorNode.id, { body: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setNoteEditorNodeId(null);
+                      }
+                    }}
+                  />
+                </label>
               </section>
             </div>
           ) : null}

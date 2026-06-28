@@ -19,6 +19,47 @@ type ColorMenuState = {
 };
 
 const nodeColors = ["#ffffff", "#e7f0ff", "#dcfce7", "#fef3c7", "#fee2e2", "#ede9fe", "#cffafe", "#fce7f3"];
+type EditorTheme = "light" | "dark";
+
+function getMindElixirTheme(theme: EditorTheme) {
+  if (theme === "dark") {
+    return {
+      name: "Mindmap Tools Dark",
+      palette: ["#60a5fa", "#2dd4bf", "#f59e0b", "#a78bfa", "#fb7185", "#4ade80"],
+      cssVar: {
+        "--main-color": "#dbeafe",
+        "--main-bgcolor": "#1e3a8a",
+        "--color": "#e5e7eb",
+        "--bgcolor": "#1f2937",
+        "--selected": "#f59e0b",
+        "--accent-color": "#60a5fa",
+        "--root-color": "#eff6ff",
+        "--root-bgcolor": "#020617",
+        "--root-radius": "8px",
+        "--main-radius": "7px",
+        "--topic-padding": "8px",
+      },
+    };
+  }
+
+  return {
+    name: "Mindmap Tools",
+    palette: ["#3568d4", "#0f766e", "#b45309", "#7c3aed", "#be123c", "#15803d"],
+    cssVar: {
+      "--main-color": "#18212f",
+      "--main-bgcolor": "#e7f0ff",
+      "--color": "#18212f",
+      "--bgcolor": "#ffffff",
+      "--selected": "#3568d4",
+      "--accent-color": "#3568d4",
+      "--root-color": "#ffffff",
+      "--root-bgcolor": "#18212f",
+      "--root-radius": "8px",
+      "--main-radius": "7px",
+      "--topic-padding": "8px",
+    },
+  };
+}
 
 function findNodeByTitle(node: MindmapNode, title: string): MindmapNode | undefined {
   if (node.title === title) return node;
@@ -51,14 +92,20 @@ export function MindElixirEditor({
   document,
   selectedNodeId,
   inlineEditRequest,
+  theme = "light",
+  showNoteEditorInContextMenu = false,
   onDocumentChange,
   onSelectedNodeChange,
+  onEditNodeNotes,
 }: {
   document: MindmapDocument;
   selectedNodeId: string;
   inlineEditRequest: number;
+  theme?: EditorTheme;
+  showNoteEditorInContextMenu?: boolean;
   onDocumentChange: (document: MindmapDocument) => void;
   onSelectedNodeChange: (id: string) => void;
+  onEditNodeNotes?: (id: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -96,23 +143,7 @@ export function MindElixirEditor({
       newTopicName: "New idea",
       allowUndo: true,
       overflowHidden: false,
-      theme: {
-        name: "Mindmap Tools",
-        palette: ["#3568d4", "#0f766e", "#b45309", "#7c3aed", "#be123c", "#15803d"],
-        cssVar: {
-          "--main-color": "#18212f",
-          "--main-bgcolor": "#e7f0ff",
-          "--color": "#18212f",
-          "--bgcolor": "#ffffff",
-          "--selected": "#3568d4",
-          "--accent-color": "#3568d4",
-          "--root-color": "#ffffff",
-          "--root-bgcolor": "#18212f",
-          "--root-radius": "8px",
-          "--main-radius": "7px",
-          "--topic-padding": "8px",
-        },
-      },
+      theme: getMindElixirTheme(theme),
     });
 
     mind.init(toMindElixirData(documentRef.current));
@@ -191,7 +222,7 @@ export function MindElixirEditor({
       mind.destroy();
       instanceRef.current = null;
     };
-  }, [onDocumentChange, onSelectedNodeChange]);
+  }, [onDocumentChange, onSelectedNodeChange, theme]);
 
   useEffect(() => {
     const mind = instanceRef.current;
@@ -264,8 +295,16 @@ export function MindElixirEditor({
     window.setTimeout(() => markSelectedNode(canvasRef.current, colorMenu.id, documentRef.current), 0);
   };
 
+  const editNotes = () => {
+    if (!colorMenu) return;
+    onSelectedNodeChange(colorMenu.id);
+    onEditNodeNotes?.(colorMenu.id);
+    setColorMenu(null);
+    window.setTimeout(() => markSelectedNode(canvasRef.current, colorMenu.id, documentRef.current), 0);
+  };
+
   return (
-    <div ref={hostRef} className="mind-elixir-host" aria-label="Mind tree editor">
+    <div ref={hostRef} className={`mind-elixir-host mind-elixir-${theme}`} aria-label="Mind tree editor">
       <div ref={canvasRef} className="mind-elixir-canvas" />
       {colorMenu ? (
         <div
@@ -278,6 +317,11 @@ export function MindElixirEditor({
           }}
           onClick={(event) => event.stopPropagation()}
         >
+          {showNoteEditorInContextMenu ? (
+            <button type="button" role="menuitem" className="node-menu-action" onClick={editNotes}>
+              Edit properties
+            </button>
+          ) : null}
           <button type="button" role="menuitem" className="node-menu-action" disabled={colorMenu.id === document.root.id} onClick={moveToRoot}>
             Move to root
           </button>

@@ -6,13 +6,22 @@ import App from "./App";
 vi.mock("./components/MindElixirEditor", () => ({
   MindElixirEditor: ({
     inlineEditRequest,
+    onEditNodeNotes,
     selectedNodeId,
+    showNoteEditorInContextMenu,
   }: {
     inlineEditRequest: number;
+    onEditNodeNotes?: (id: string) => void;
     selectedNodeId: string;
+    showNoteEditorInContextMenu?: boolean;
   }) => (
     <div data-inline-edit-request={inlineEditRequest} data-selected-node-id={selectedNodeId} data-testid="mind-elixir-editor">
       Mock Mind Elixir editor
+      {showNoteEditorInContextMenu ? (
+        <button type="button" onClick={() => onEditNodeNotes?.(selectedNodeId)}>
+          Mock edit properties
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -160,6 +169,22 @@ describe("App", () => {
       const stored = window.localStorage.getItem("mindmap-tools.document");
       expect(stored).toContain("Persisted Map");
     });
+  });
+
+  it("toggles and persists dark theme mode", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Dark theme" }));
+
+    expect(document.querySelector(".app-shell")).toHaveClass("theme-dark");
+    expect(window.localStorage.getItem("mindmap-tools.theme")).toBe("dark");
+
+    unmount();
+    render(<App />);
+
+    expect(document.querySelector(".app-shell")).toHaveClass("theme-dark");
+    expect(screen.getByRole("button", { name: "Light theme" })).toBeInTheDocument();
   });
 
   it("resets current editing data", async () => {
@@ -375,6 +400,31 @@ describe("App", () => {
 
     expect(screen.queryByRole("button", { name: "Save to Neon" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Cloud" })).not.toBeInTheDocument();
+  });
+
+  it("opens a centered notes editor when properties are hidden", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const notesInput = screen.getByLabelText("Notes");
+    await user.type(notesInput, "Existing note");
+    await user.click(screen.getByRole("button", { name: "Hide properties" }));
+
+    expect(screen.queryByRole("button", { name: "Mock edit properties" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mock edit properties" }));
+
+    const popup = screen.getByRole("dialog", { name: "Edit notes for Brainstorm" });
+    expect(popup).toBeInTheDocument();
+    const popupNotes = screen.getByLabelText("Popup notes") as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(document.activeElement).toBe(popupNotes);
+      expect(popupNotes.selectionStart).toBe("Existing note".length);
+    });
+    await user.type(popupNotes, " updated");
+    expect(popupNotes).toHaveValue("Existing note updated");
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Edit notes for Brainstorm" })).not.toBeInTheDocument();
   });
 
   it("creates and edits a mindmap node", async () => {

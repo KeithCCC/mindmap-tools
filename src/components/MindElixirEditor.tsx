@@ -41,6 +41,7 @@ export function MindElixirEditor({
   const selectedNodeIdRef = useRef(selectedNodeId);
   const internalUpdateRef = useRef(false);
   const inlineInputRef = useRef<HTMLInputElement>(null);
+  const selectedInlineEditIdRef = useRef<string | null>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
 
   useEffect(() => {
@@ -163,7 +164,14 @@ export function MindElixirEditor({
   }, [inlineEditRequest]);
 
   useEffect(() => {
-    if (inlineEdit) inlineInputRef.current?.select();
+    if (!inlineEdit) {
+      selectedInlineEditIdRef.current = null;
+      return;
+    }
+    if (selectedInlineEditIdRef.current !== inlineEdit.id) {
+      inlineInputRef.current?.select();
+      selectedInlineEditIdRef.current = inlineEdit.id;
+    }
   }, [inlineEdit]);
 
   const commitInlineEdit = () => {
@@ -191,7 +199,7 @@ export function MindElixirEditor({
             width: inlineEdit.width,
             minHeight: inlineEdit.height,
           }}
-          onChange={(event) => setInlineEdit({ ...inlineEdit, value: event.target.value })}
+          onChange={(event) => setInlineEdit((current) => (current ? { ...current, value: event.target.value } : current))}
           onBlur={commitInlineEdit}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

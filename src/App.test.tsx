@@ -4,7 +4,17 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 vi.mock("./components/MindElixirEditor", () => ({
-  MindElixirEditor: () => <div data-testid="mind-elixir-editor">Mock Mind Elixir editor</div>,
+  MindElixirEditor: ({
+    inlineEditRequest,
+    selectedNodeId,
+  }: {
+    inlineEditRequest: number;
+    selectedNodeId: string;
+  }) => (
+    <div data-inline-edit-request={inlineEditRequest} data-selected-node-id={selectedNodeId} data-testid="mind-elixir-editor">
+      Mock Mind Elixir editor
+    </div>
+  ),
 }));
 
 async function blobText(blob: Blob): Promise<string> {
@@ -20,6 +30,7 @@ describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("uses Mind Elixir as the visual mind tree editor", () => {
@@ -55,27 +66,44 @@ describe("App", () => {
     const payload = JSON.parse(text) as { type?: string; source?: string };
     expect(payload.type).toBe("excalidraw");
     expect(payload.source).toBe("mindmap-tools");
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:mindmap");
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
   });
 
   it("saves current mindmap data as JSON", async () => {
     const user = userEvent.setup();
     const createObjectUrl = vi.fn((_: Blob) => "blob:data");
     const revokeObjectUrl = vi.fn();
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
 
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Save Data" }));
+    await user.click(screen.getByRole("button", { name: "Download JSON" }));
 
     const blob = createObjectUrl.mock.calls[0]?.[0];
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe("application/json");
-    const payload = JSON.parse(await blobText(blob)) as { root?: { title?: string } };
+    const payload = JSON.parse(await blobText(blob)) as { title?: string; root?: { title?: string } };
+    expect(payload.title).toBe("Brainstorm");
     expect(payload.root?.title).toBe("Brainstorm");
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:data");
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it("edits map file name separately from selected node title", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const mapNameInput = screen.getByLabelText("Map file name");
+    const nodeTitleInput = screen.getByLabelText("Selected node title");
+    await user.clear(mapNameInput);
+    await user.type(mapNameInput, "Customer Discovery File");
+    await user.clear(nodeTitleInput);
+    await user.type(nodeTitleInput, "Research Questions");
+
+    expect(screen.getByLabelText("Map file name")).toHaveValue("Customer Discovery File");
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("Research Questions");
+    expect(screen.getByRole("heading", { name: "Research Questions" })).toBeInTheDocument();
   });
 
   it("loads mindmap data from a JSON file", async () => {
@@ -126,6 +154,13 @@ describe("App", () => {
     expect(screen.getByLabelText("Selected node title")).toHaveValue("Brainstorm");
   });
 
+  it("hides Neon cloud storage controls while local file management is primary", () => {
+    render(<App />);
+
+    expect(screen.queryByRole("button", { name: "Save to Neon" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Cloud" })).not.toBeInTheDocument();
+  });
+
   it("creates and edits a mindmap node", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -136,6 +171,34 @@ describe("App", () => {
     await user.type(titleInput, "Market research");
 
     expect(screen.getByRole("button", { name: "Market research" })).toBeInTheDocument();
+  });
+
+  it("opens inline editing after creating a child with Tab", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const editor = screen.getByTestId("mind-elixir-editor");
+    const initialSelectedId = editor.dataset.selectedNodeId;
+
+    await user.keyboard("{Tab}");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mind-elixir-editor")).toHaveAttribute("data-inline-edit-request", "1");
+    });
+    expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(initialSelectedId);
+  });
+
+  it("opens inline editing after creating a sibling with Enter", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const editor = screen.getByTestId("mind-elixir-editor");
+    const initialSelectedId = editor.dataset.selectedNodeId;
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mind-elixir-editor")).toHaveAttribute("data-inline-edit-request", "1");
+    });
+    expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(initialSelectedId);
   });
 
   it("imports Mermaid text and updates the tree", async () => {

@@ -52,8 +52,15 @@ export function createMindmapDocument(title = "New mindmap"): MindmapDocument {
 export function touchDocument(document: MindmapDocument, root: MindmapNode): MindmapDocument {
   return {
     ...document,
-    title: root.title,
     root,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function renameMindmapDocument(document: MindmapDocument, title: string): MindmapDocument {
+  return {
+    ...document,
+    title,
     updatedAt: new Date().toISOString(),
   };
 }

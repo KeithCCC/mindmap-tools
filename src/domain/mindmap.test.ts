@@ -24,6 +24,14 @@ describe("mindmap tree operations", () => {
     expect(doc.root.children).toHaveLength(0);
   });
 
+  it("keeps document title separate from root node title", () => {
+    let doc = createMindmapDocument("Project file");
+    doc = updateNode(doc, doc.root.id, { title: "Root topic" });
+
+    expect(doc.title).toBe("Project file");
+    expect(doc.root.title).toBe("Root topic");
+  });
+
   it("moves nodes without allowing invalid cycles", () => {
     let doc = createMindmapDocument("Root");
     doc = addNode(doc, doc.root.id, "A");

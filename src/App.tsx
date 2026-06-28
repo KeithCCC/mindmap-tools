@@ -11,6 +11,7 @@ import {
   MindmapDocument,
   MindmapNode,
   moveNode,
+  renameMindmapDocument,
   updateNode,
 } from "./domain/mindmap";
 import { parseExcalidrawMindmap, serializeExcalidrawMindmap } from "./converters/excalidraw";
@@ -20,7 +21,33 @@ import { MindElixirEditor } from "./components/MindElixirEditor";
 
 const storageKey = "mindmap-tools.document";
 
-type Tab = "edit" | "import" | "export" | "wiki";
+type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
+
+type CloudMindmapSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type FileSaveHandle = {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+};
+
+declare global {
+  interface Window {
+    showSaveFilePicker?: (options?: {
+      suggestedName?: string;
+      types?: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<FileSaveHandle>;
+  }
+}
 
 function loadDocument(): MindmapDocument {
   try {
@@ -37,8 +64,19 @@ function downloadBlob(fileName: string, blob: Blob) {
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function slugifyFileName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "mindmap";
 }
 
 function readFileText(file: File): Promise<string> {
@@ -109,6 +147,12 @@ function createWikiZip(files: WikiFile[]): Blob {
   return new Blob([zipSync(entries)], { type: "application/zip" });
 }
 
+async function readApiJson<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? `Request failed with status ${response.status}`);
+  return payload;
+}
+
 export default function App() {
   const [document, setDocument] = useState<MindmapDocument>(() => loadDocument());
   const [selectedId, setSelectedId] = useState(document.root.id);
@@ -117,6 +161,10 @@ export default function App() {
   const [inlineEditRequest, setInlineEditRequest] = useState(0);
   const [mermaidInput, setMermaidInput] = useState("mindmap\n  Brainstorm\n    Audience\n    Product\n    Distribution");
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [cloudMindmaps, setCloudMindmaps] = useState<CloudMindmapSummary[]>([]);
+  const [cloudStatus, setCloudStatus] = useState("Cloud storage not checked yet.");
+  const [isCloudLoading, setIsCloudLoading] = useState(false);
+  const [localFileStatus, setLocalFileStatus] = useState("Local JSON export is ready.");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -176,12 +224,14 @@ export default function App() {
         const child = createNode("New idea");
         setDocument((current) => appendNode(current, selectedId, child));
         setSelectedId(child.id);
+        setInlineEditRequest((count) => count + 1);
       }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         const result = addSibling(document, selectedId, "New idea");
         setDocument(result.document);
         setSelectedId(result.node.id);
+        setInlineEditRequest((count) => count + 1);
       }
       if (event.key === "Delete" || event.key === "Backspace") {
         if (selectedId !== document.root.id) {
@@ -214,6 +264,121 @@ export default function App() {
 
   const updateSelected = (updates: Partial<Pick<MindmapNode, "title" | "body">>) => {
     setDocument((current) => updateNode(current, selectedNode.id, updates));
+  };
+
+  // Neon cloud storage is implemented for future work, but hidden from the UI while local JSON file management is the primary workflow.
+  const refreshCloudMindmaps = async () => {
+    setIsCloudLoading(true);
+    setCloudStatus("Loading cloud mindmaps...");
+    try {
+      const payload = await readApiJson<{ mindmaps: CloudMindmapSummary[] }>(await fetch("/api/mindmaps"));
+      setCloudMindmaps(payload.mindmaps);
+      setCloudStatus(payload.mindmaps.length ? `Loaded ${payload.mindmaps.length} cloud mindmap(s).` : "No cloud mindmaps saved yet.");
+    } catch (error) {
+      setCloudStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  const saveToCloud = async () => {
+    setActiveTab("cloud");
+    setIsCloudLoading(true);
+    setCloudStatus("Saving current mindmap to Neon...");
+    try {
+      await readApiJson<{ document: MindmapDocument }>(
+        await fetch("/api/mindmaps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document }),
+        }),
+      );
+      setCloudStatus(`Saved "${document.title}" to Neon.`);
+      await refreshCloudMindmaps();
+    } catch (error) {
+      setCloudStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  const loadFromCloud = async (id: string) => {
+    setIsCloudLoading(true);
+    setCloudStatus("Loading mindmap from Neon...");
+    try {
+      const payload = await readApiJson<{ document: MindmapDocument }>(await fetch(`/api/mindmaps/${encodeURIComponent(id)}`));
+      setDocument(payload.document);
+      setSelectedId(payload.document.root.id);
+      setCloudStatus(`Loaded "${payload.document.title}" from Neon.`);
+      setActiveTab("edit");
+    } catch (error) {
+      setCloudStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  const deleteFromCloud = async (id: string) => {
+    setIsCloudLoading(true);
+    setCloudStatus("Deleting cloud mindmap...");
+    try {
+      const response = await fetch(`/api/mindmaps/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(`Delete failed with status ${response.status}`);
+      setCloudStatus("Deleted cloud mindmap.");
+      await refreshCloudMindmaps();
+    } catch (error) {
+      setCloudStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
+
+  const downloadJson = () => {
+    const fileName = `${slugifyFileName(document.title)}.json`;
+    downloadBlob(fileName, new Blob([dataOutput], { type: "application/json" }));
+    setActiveTab("export");
+    setLocalFileStatus(`Requested download: ${fileName}. If no file appears, use Copy JSON or open the app in Chrome/Edge.`);
+  };
+
+  const saveJsonFile = async () => {
+    const fileName = `${slugifyFileName(document.title)}.json`;
+    const blob = new Blob([dataOutput], { type: "application/json" });
+    if (!window.showSaveFilePicker) {
+      downloadBlob(fileName, blob);
+      setLocalFileStatus(`Requested download: ${fileName}. If no file appears, use Copy JSON or open the app in Chrome/Edge.`);
+      return;
+    }
+
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: "Mindmap JSON",
+            accept: { "application/json": [".json"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      setLocalFileStatus(`Saved JSON file: ${fileName}`);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setLocalFileStatus("Save canceled.");
+      } else {
+        setLocalFileStatus("Save file was blocked by the browser. Use Copy JSON instead.");
+      }
+    }
+  };
+
+  const copyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(dataOutput);
+      setLocalFileStatus("Copied current mindmap JSON to clipboard.");
+    } catch {
+      setLocalFileStatus("Clipboard copy was blocked by the browser.");
+    }
   };
 
   const importMermaid = () => {
@@ -262,8 +427,8 @@ export default function App() {
           <h1>{document.root.title}</h1>
         </div>
         <div className="header-actions">
-          <button type="button" onClick={() => downloadBlob("mindmap-tools.json", new Blob([dataOutput], { type: "application/json" }))}>
-            Save Data
+          <button type="button" onClick={downloadJson}>
+            Download JSON
           </button>
           <input
             ref={dataFileInputRef}
@@ -278,7 +443,7 @@ export default function App() {
             }}
           />
           <button type="button" onClick={() => dataFileInputRef.current?.click()}>
-            Load Data
+            Load JSON
           </button>
           <button type="button" onClick={resetData}>
             Reset Data
@@ -349,6 +514,13 @@ export default function App() {
           {activeTab === "edit" ? (
             <section className="tool-section">
               <label>
+                Map file name
+                <input
+                  value={document.title}
+                  onChange={(event) => setDocument((current) => renameMindmapDocument(current, event.target.value))}
+                />
+              </label>
+              <label>
                 Selected node title
                 <input value={selectedNode.title} onChange={(event) => updateSelected({ title: event.target.value })} />
               </label>
@@ -367,6 +539,7 @@ export default function App() {
                     const child = createNode("New idea");
                     setDocument((current) => appendNode(current, selectedNode.id, child));
                     setSelectedId(child.id);
+                    setInlineEditRequest((count) => count + 1);
                   }}
                 >
                   Add child
@@ -398,6 +571,40 @@ export default function App() {
                     ))}
                 </select>
               </label>
+            </section>
+          ) : null}
+
+          {activeTab === "cloud" ? (
+            <section className="tool-section">
+              <div className="button-grid">
+                <button type="button" disabled={isCloudLoading} onClick={saveToCloud}>
+                  Save to Neon
+                </button>
+                <button type="button" disabled={isCloudLoading} onClick={refreshCloudMindmaps}>
+                  Refresh Cloud
+                </button>
+              </div>
+              <div className="warnings" role="status">
+                <p>{cloudStatus}</p>
+              </div>
+              <div className="cloud-list" aria-label="Cloud mindmaps">
+                {cloudMindmaps.map((mindmap) => (
+                  <article className="cloud-item" key={mindmap.id}>
+                    <div>
+                      <strong>{mindmap.title}</strong>
+                      <span>{new Date(mindmap.updatedAt).toLocaleString()}</span>
+                    </div>
+                    <div className="cloud-actions">
+                      <button type="button" disabled={isCloudLoading} onClick={() => void loadFromCloud(mindmap.id)}>
+                        Load
+                      </button>
+                      <button type="button" disabled={isCloudLoading} onClick={() => void deleteFromCloud(mindmap.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -435,6 +642,24 @@ export default function App() {
 
           {activeTab === "export" ? (
             <section className="tool-section">
+              <label>
+                Mindmap JSON
+                <textarea readOnly value={dataOutput} rows={8} />
+              </label>
+            <div className="button-grid">
+              <button type="button" onClick={() => void saveJsonFile()}>
+                Save JSON File
+              </button>
+              <button type="button" onClick={downloadJson}>
+                Download JSON
+              </button>
+              <button type="button" onClick={() => void copyJson()}>
+                  Copy JSON
+                </button>
+              </div>
+              <div className="warnings" role="status">
+                <p>{localFileStatus}</p>
+              </div>
               <label>
                 Mermaid
                 <textarea readOnly value={mermaidOutput} rows={8} />

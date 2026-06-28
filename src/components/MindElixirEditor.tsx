@@ -18,6 +18,8 @@ type ColorMenuState = {
   top: number;
 };
 
+type MindmapPanEvent = CustomEvent<{ dx: number; dy: number }>;
+
 const nodeColors = ["#ffffff", "#e7f0ff", "#dcfce7", "#fef3c7", "#fee2e2", "#ede9fe", "#cffafe", "#fce7f3"];
 type EditorTheme = "light" | "dark";
 
@@ -268,6 +270,17 @@ export function MindElixirEditor({
       selectedInlineEditIdRef.current = inlineEdit.id;
     }
   }, [inlineEdit]);
+
+  useEffect(() => {
+    const handleKeyboardPan = (event: Event) => {
+      const { dx, dy } = (event as MindmapPanEvent).detail ?? {};
+      if (typeof dx !== "number" || typeof dy !== "number") return;
+      instanceRef.current?.move(dx, dy, true);
+    };
+
+    window.addEventListener("mindmap-pan", handleKeyboardPan);
+    return () => window.removeEventListener("mindmap-pan", handleKeyboardPan);
+  }, []);
 
   const commitInlineEdit = () => {
     if (!inlineEdit) return;

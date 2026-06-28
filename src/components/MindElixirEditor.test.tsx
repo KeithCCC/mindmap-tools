@@ -6,6 +6,7 @@ import { MindElixirEditor } from "./MindElixirEditor";
 
 let topicElement: HTMLElement;
 let latestMindElixirOptions: { theme?: { name?: string; cssVar?: Record<string, string> } } | undefined;
+const moveMock = vi.fn();
 
 vi.mock("mind-elixir", () => {
   class MockMindElixir {
@@ -36,6 +37,7 @@ vi.mock("mind-elixir", () => {
     destroy = vi.fn();
     getData = vi.fn();
     findEle = vi.fn(() => topicElement);
+    move = moveMock;
     selectNode = vi.fn();
   }
 
@@ -66,6 +68,7 @@ function renderEditor(document: MindmapDocument, inlineEditRequest = 1, showNote
 describe("MindElixirEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    moveMock.mockClear();
     latestMindElixirOptions = undefined;
   });
 
@@ -161,5 +164,15 @@ describe("MindElixirEditor", () => {
     expect(latestMindElixirOptions?.theme?.name).toBe("Mindmap Tools Dark");
     expect(latestMindElixirOptions?.theme?.cssVar?.["--bgcolor"]).toBe("#1f2937");
     expect(latestMindElixirOptions?.theme?.cssVar?.["--root-bgcolor"]).toBe("#020617");
+  });
+
+  it("moves the Mind Elixir pane when keyboard pan events are received", () => {
+    const document = createMindmapDocument("Brainstorm");
+    document.root.id = "root";
+    renderEditor(document, 0);
+
+    window.dispatchEvent(new CustomEvent("mindmap-pan", { detail: { dx: 80, dy: 0 } }));
+
+    expect(moveMock).toHaveBeenCalledWith(80, 0, true);
   });
 });

@@ -187,6 +187,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Light theme" })).toBeInTheDocument();
   });
 
+  it("dispatches mindmap pane movement while Space is held with arrow keys", async () => {
+    const panEvents: Array<{ dx: number; dy: number }> = [];
+    window.addEventListener("mindmap-pan", ((event: CustomEvent<{ dx: number; dy: number }>) => {
+      panEvents.push(event.detail);
+    }) as EventListener);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.keyboard("[Space>][ArrowUp][ArrowLeft][/Space]");
+
+    expect(panEvents).toEqual([
+      { dx: 0, dy: 80 },
+      { dx: 80, dy: 0 },
+    ]);
+    expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).toBeDefined();
+  });
+
   it("resets current editing data", async () => {
     const user = userEvent.setup();
     render(<App />);

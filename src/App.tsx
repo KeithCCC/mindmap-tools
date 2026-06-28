@@ -28,6 +28,7 @@ const themeStorageKey = "mindmap-tools.theme";
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
 type OutlineDropTarget = { id: string; position: DropPosition } | null;
+type MindmapPanDirection = "up" | "down" | "left" | "right";
 
 type CloudMindmapSummary = {
   id: string;
@@ -278,6 +279,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
   const noteEditorRef = useRef<HTMLTextAreaElement>(null);
+  const isSpacePanningRef = useRef(false);
 
   const selectedNode = findNode(document.root, selectedId) ?? document.root;
   const noteEditorNode = noteEditorNodeId ? findNode(document.root, noteEditorNodeId) : undefined;
@@ -344,8 +346,39 @@ export default function App() {
       }
     };
 
+    const panWithKeyboard = (direction: MindmapPanDirection) => {
+      const distance = 80;
+      const panByDirection: Record<MindmapPanDirection, { dx: number; dy: number }> = {
+        up: { dx: 0, dy: distance },
+        down: { dx: 0, dy: -distance },
+        left: { dx: distance, dy: 0 },
+        right: { dx: -distance, dy: 0 },
+      };
+      window.dispatchEvent(new CustomEvent("mindmap-pan", { detail: panByDirection[direction] }));
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isFormField(event.target)) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        isSpacePanningRef.current = true;
+        return;
+      }
+      if (isSpacePanningRef.current) {
+        const directionByKey: Partial<Record<string, MindmapPanDirection>> = {
+          ArrowUp: "up",
+          ArrowDown: "down",
+          ArrowLeft: "left",
+          ArrowRight: "right",
+        };
+        const direction = directionByKey[event.key];
+        if (direction) {
+          event.preventDefault();
+          event.stopPropagation();
+          panWithKeyboard(direction);
+          return;
+        }
+      }
       if (event.key === "F2") {
         event.preventDefault();
         setInlineEditRequest((count) => count + 1);
@@ -396,8 +429,21 @@ export default function App() {
       }
     };
 
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") isSpacePanningRef.current = false;
+    };
+    const resetSpacePanning = () => {
+      isSpacePanningRef.current = false;
+    };
+
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", resetSpacePanning);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", resetSpacePanning);
+    };
   }, [document, selectedId]);
 
   const updateSelected = (updates: Partial<Pick<MindmapNode, "title" | "body">>) => {

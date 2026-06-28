@@ -117,6 +117,7 @@ export function MindElixirEditor({
   const internalUpdateRef = useRef(false);
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const selectedInlineEditIdRef = useRef<string | null>(null);
+  const clickViewportTransformRef = useRef<string | null>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
   const [colorMenu, setColorMenu] = useState<ColorMenuState | null>(null);
 
@@ -133,6 +134,7 @@ export function MindElixirEditor({
     if (!hostRef.current || !canvasRef.current || instanceRef.current) return;
     const host = hostRef.current;
     const canvas = canvasRef.current;
+    const getViewportCanvas = () => canvas.querySelector<HTMLElement>(".map-canvas");
 
     const mind = new MindElixir({
       el: canvas,
@@ -186,11 +188,29 @@ export function MindElixirEditor({
     const handleClick = (event: MouseEvent) => {
       const topic = event.target instanceof HTMLElement ? event.target.closest("me-tpc") : null;
       if (!topic) return;
-      mind.selectNode(topic as Parameters<typeof mind.selectNode>[0]);
+      event.stopPropagation();
       const nodeId = getTopicNodeId(topic, documentRef.current);
       if (!nodeId) return;
+      (mind as unknown as { currentNode?: Element }).currentNode = topic;
       onSelectedNodeChange(nodeId);
       markSelectedNode(canvas, nodeId, documentRef.current);
+      const transform = clickViewportTransformRef.current;
+      if (transform) {
+        window.requestAnimationFrame(() => {
+          const viewportCanvas = getViewportCanvas();
+          if (viewportCanvas) viewportCanvas.style.transform = transform;
+        });
+      }
+      clickViewportTransformRef.current = null;
+    };
+    const handleMouseDown = (event: MouseEvent) => {
+      const topic = event.target instanceof HTMLElement ? event.target.closest("me-tpc") : null;
+      if (!topic) {
+        clickViewportTransformRef.current = null;
+        return;
+      }
+      const viewportCanvas = getViewportCanvas();
+      clickViewportTransformRef.current = viewportCanvas ? getComputedStyle(viewportCanvas).transform : null;
     };
     const handleContextMenu = (event: MouseEvent) => {
       const topic = event.target instanceof HTMLElement ? event.target.closest("me-tpc") : null;
@@ -209,6 +229,7 @@ export function MindElixirEditor({
       });
     };
     const closeColorMenu = () => setColorMenu(null);
+    canvas.addEventListener("mousedown", handleMouseDown, true);
     canvas.addEventListener("click", handleClick, true);
     canvas.addEventListener("dblclick", handleDoubleClick, true);
     canvas.addEventListener("contextmenu", handleContextMenu, true);
@@ -216,6 +237,7 @@ export function MindElixirEditor({
     window.addEventListener("keydown", closeColorMenu);
 
     return () => {
+      canvas.removeEventListener("mousedown", handleMouseDown, true);
       canvas.removeEventListener("click", handleClick, true);
       canvas.removeEventListener("dblclick", handleDoubleClick, true);
       canvas.removeEventListener("contextmenu", handleContextMenu, true);

@@ -5,8 +5,10 @@ import { addNode, createMindmapDocument, type MindmapDocument } from "../domain/
 import { MindElixirEditor } from "./MindElixirEditor";
 
 let topicElement: HTMLElement;
+let mapCanvasElement: HTMLElement;
 let latestMindElixirOptions: { theme?: { name?: string; cssVar?: Record<string, string> } } | undefined;
 const moveMock = vi.fn();
+const selectNodeMock = vi.fn();
 
 vi.mock("mind-elixir", () => {
   class MockMindElixir {
@@ -21,13 +23,16 @@ vi.mock("mind-elixir", () => {
     constructor(options: { el: HTMLElement; theme?: { name?: string; cssVar?: Record<string, string> } }) {
       latestMindElixirOptions = options;
       const { el } = options;
+      mapCanvasElement = document.createElement("div");
+      mapCanvasElement.className = "map-canvas";
       topicElement = document.createElement("me-tpc");
       topicElement.textContent = "Brainstorm";
       (topicElement as unknown as { nodeObj: { id: string; topic: string } }).nodeObj = {
         id: "root",
         topic: "Brainstorm",
       };
-      el.appendChild(topicElement);
+      mapCanvasElement.appendChild(topicElement);
+      el.appendChild(mapCanvasElement);
       this.currentNode = topicElement;
     }
 
@@ -38,7 +43,7 @@ vi.mock("mind-elixir", () => {
     getData = vi.fn();
     findEle = vi.fn(() => topicElement);
     move = moveMock;
-    selectNode = vi.fn();
+    selectNode = selectNodeMock;
   }
 
   return {
@@ -69,6 +74,7 @@ describe("MindElixirEditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     moveMock.mockClear();
+    selectNodeMock.mockClear();
     latestMindElixirOptions = undefined;
   });
 
@@ -117,6 +123,23 @@ describe("MindElixirEditor", () => {
     await user.click(topicElement);
 
     expect(onSelectedNodeChange).toHaveBeenCalledWith("fmi");
+    expect(selectNodeMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves the panned viewport transform after clicking a node", async () => {
+    const user = userEvent.setup();
+    const document = createMindmapDocument("Brainstorm");
+    document.root.id = "root";
+    renderEditor(document, 0);
+    mapCanvasElement.style.transform = "matrix(1, 0, 0, 1, 180, -60)";
+    topicElement.addEventListener("mousedown", () => {
+      mapCanvasElement.style.transform = "matrix(1, 0, 0, 1, 322, -346)";
+    });
+
+    await user.click(topicElement);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(mapCanvasElement.style.transform).toBe("matrix(1, 0, 0, 1, 180, -60)");
   });
 
   it("moves the right-clicked node to the root", async () => {

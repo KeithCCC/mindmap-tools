@@ -3,27 +3,34 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
+let latestEditorDocumentChange: ((document: unknown) => void) | undefined;
+
 vi.mock("./components/MindElixirEditor", () => ({
   MindElixirEditor: ({
     inlineEditRequest,
+    onDocumentChange,
     onEditNodeNotes,
     selectedNodeId,
     showNoteEditorInContextMenu,
   }: {
     inlineEditRequest: number;
+    onDocumentChange?: (document: unknown) => void;
     onEditNodeNotes?: (id: string) => void;
     selectedNodeId: string;
     showNoteEditorInContextMenu?: boolean;
-  }) => (
-    <div data-inline-edit-request={inlineEditRequest} data-selected-node-id={selectedNodeId} data-testid="mind-elixir-editor">
-      Mock Mind Elixir editor
-      {showNoteEditorInContextMenu ? (
-        <button type="button" onClick={() => onEditNodeNotes?.(selectedNodeId)}>
-          Mock edit properties
-        </button>
-      ) : null}
-    </div>
-  ),
+  }) => {
+    latestEditorDocumentChange = onDocumentChange;
+    return (
+      <div data-inline-edit-request={inlineEditRequest} data-selected-node-id={selectedNodeId} data-testid="mind-elixir-editor">
+        Mock Mind Elixir editor
+        {showNoteEditorInContextMenu ? (
+          <button type="button" onClick={() => onEditNodeNotes?.(selectedNodeId)}>
+            Mock edit properties
+          </button>
+        ) : null}
+      </div>
+    );
+  },
 }));
 
 async function blobText(blob: Blob): Promise<string> {
@@ -61,6 +68,7 @@ describe("App", () => {
     window.localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    latestEditorDocumentChange = undefined;
   });
 
   it("uses Mind Elixir as the visual mind tree editor", () => {
@@ -202,6 +210,16 @@ describe("App", () => {
       { dx: 80, dy: 0 },
     ]);
     expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).toBeDefined();
+  });
+
+  it("keeps the Mind Elixir document callback stable after selecting a new node", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const initialCallback = latestEditorDocumentChange;
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+
+    expect(latestEditorDocumentChange).toBe(initialCallback);
   });
 
   it("resets current editing data", async () => {

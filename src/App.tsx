@@ -285,16 +285,23 @@ export default function App() {
   const dataFileInputRef = useRef<HTMLInputElement>(null);
   const noteEditorRef = useRef<HTMLTextAreaElement>(null);
   const isSpacePanningRef = useRef(false);
+  const documentStateRef = useRef(document);
+  const selectedIdStateRef = useRef(selectedId);
+
+  documentStateRef.current = document;
+  selectedIdStateRef.current = selectedId;
 
   const commitDocument = useCallback(
     (update: DocumentUpdate, nextSelectedId?: string) => {
-      const next = typeof update === "function" ? update(document) : update;
-      if (next === document) return;
-      setUndoStack((stack) => [...stack.slice(-49), { document, selectedId }]);
+      const currentDocument = documentStateRef.current;
+      const currentSelectedId = selectedIdStateRef.current;
+      const next = typeof update === "function" ? update(currentDocument) : update;
+      if (next === currentDocument) return;
+      setUndoStack((stack) => [...stack.slice(-49), { document: currentDocument, selectedId: currentSelectedId }]);
       setDocument(next);
       if (nextSelectedId) setSelectedId(nextSelectedId);
     },
-    [document, selectedId],
+    [],
   );
 
   const undoLastChange = useCallback(() => {

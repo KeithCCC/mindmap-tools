@@ -217,6 +217,34 @@ describe("App", () => {
     expect(screen.getByLabelText("Selected node title")).toHaveValue("Brainstorm");
   });
 
+  it("undoes the last document change from the header button", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    expect(screen.queryByRole("button", { name: "New idea" })).not.toBeInTheDocument();
+  });
+
+  it("undoes a node addition with Ctrl+Z when focus is in the editor", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByTestId("mind-elixir-editor"));
+    await user.keyboard("{Tab}");
+    const addedNodeId = screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId;
+
+    await user.keyboard("{Control>}{z}{/Control}");
+
+    expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(addedNodeId);
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    expect(screen.queryByRole("button", { name: "New idea" })).not.toBeInTheDocument();
+  });
+
   it("selects the parent node and preserves children after deleting a nested selected node", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -230,6 +258,7 @@ describe("App", () => {
     await user.clear(titleInput);
     await user.type(titleInput, "Nested idea");
     await user.click(screen.getByRole("button", { name: "Delete node" }));
+    await user.click(screen.getByRole("button", { name: "Delete only this node" }));
 
     expect(screen.getByLabelText("Selected node title")).toHaveValue("Parent idea");
   });
@@ -255,11 +284,59 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "B" }));
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "Delete node" }));
+    await user.click(screen.getByRole("button", { name: "Delete only this node" }));
 
     expect(screen.queryByRole("button", { name: "B" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open outline" }));
     expect(screen.getByRole("button", { name: "C" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected node title")).toHaveValue("A");
+  });
+
+  it("deletes the highlighted node and child nodes when requested", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "A");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "B");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "C");
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "B" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Delete node" }));
+
+    expect(screen.getByRole("dialog", { name: "Delete B" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete node and children" }));
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    expect(screen.queryByRole("button", { name: "B" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "C" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("A");
+  });
+
+  it("opens the delete choice dialog from the Delete key", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Keyboard target");
+    await user.click(screen.getByTestId("mind-elixir-editor"));
+    await user.keyboard("{Delete}");
+
+    expect(screen.getByRole("dialog", { name: "Delete Keyboard target" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Delete Keyboard target" })).not.toBeInTheDocument();
   });
 
   it("reorders outline nodes by dragging above another node", async () => {

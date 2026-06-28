@@ -183,9 +183,31 @@ function removeNode(node: MindmapNode, id: string): { node: MindmapNode; removed
   return { node: { ...node, children }, removed };
 }
 
+function removeSubtree(node: MindmapNode, id: string): { node: MindmapNode; removed?: MindmapNode } {
+  let removed: MindmapNode | undefined;
+  const children = node.children
+    .map((child) => {
+      if (child.id === id) {
+        removed = child;
+        return undefined;
+      }
+      const result = removeSubtree(child, id);
+      if (result.removed) removed = result.removed;
+      return result.node;
+    })
+    .filter((child): child is MindmapNode => Boolean(child));
+  return { node: { ...node, children }, removed };
+}
+
 export function deleteNode(document: MindmapDocument, nodeId: string): MindmapDocument {
   if (document.root.id === nodeId) return document;
   const result = removeNode(document.root, nodeId);
+  return touchDocument(document, result.node);
+}
+
+export function deleteNodeSubtree(document: MindmapDocument, nodeId: string): MindmapDocument {
+  if (document.root.id === nodeId) return document;
+  const result = removeSubtree(document.root, nodeId);
   return touchDocument(document, result.node);
 }
 

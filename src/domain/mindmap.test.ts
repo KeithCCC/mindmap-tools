@@ -3,6 +3,7 @@ import {
   addNode,
   createMindmapDocument,
   deleteNode,
+  deleteNodeSubtree,
   findNode,
   findParentNode,
   insertIntermediateNode,
@@ -54,6 +55,24 @@ describe("mindmap tree operations", () => {
     expect(findNode(doc.root, b!.id)).toBeUndefined();
     expect(findNode(doc.root, a.id)?.children[0].id).toBe(c!.id);
     expect(findParentNode(doc.root, c!.id)?.id).toBe(a.id);
+  });
+
+  it("deletes the selected node and all child nodes as a subtree", () => {
+    let doc = createMindmapDocument("Root");
+    doc = addNode(doc, doc.root.id, "A");
+    const a = doc.root.children[0];
+    doc = addNode(doc, a.id, "B");
+    const b = findNode(doc.root, a.id)?.children[0];
+    expect(b).toBeDefined();
+    doc = addNode(doc, b!.id, "C");
+    const c = findNode(doc.root, b!.id)?.children[0];
+    expect(c).toBeDefined();
+
+    doc = deleteNodeSubtree(doc, b!.id);
+
+    expect(findNode(doc.root, b!.id)).toBeUndefined();
+    expect(findNode(doc.root, c!.id)).toBeUndefined();
+    expect(findNode(doc.root, a.id)?.children).toHaveLength(0);
   });
 
   it("keeps document title separate from root node title", () => {

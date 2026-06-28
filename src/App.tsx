@@ -1,4 +1,4 @@
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { strToU8, zipSync } from "fflate";
 import {
   appendNode,
@@ -6,6 +6,7 @@ import {
   createNode,
   createMindmapDocument,
   deleteNode,
+  deleteNodeSubtree,
   findNode,
   findParentNode,
   flattenNodes,
@@ -29,6 +30,8 @@ type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
 type OutlineDropTarget = { id: string; position: DropPosition } | null;
 type MindmapPanDirection = "up" | "down" | "left" | "right";
+type DocumentUpdate = MindmapDocument | ((current: MindmapDocument) => MindmapDocument);
+type UndoSnapshot = { document: MindmapDocument; selectedId: string };
 
 type CloudMindmapSummary = {
   id: string;
@@ -261,11 +264,13 @@ async function readApiJson<T>(response: Response): Promise<T> {
 
 export default function App() {
   const [document, setDocument] = useState<MindmapDocument>(() => loadDocument());
+  const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">(() => loadTheme());
   const [selectedId, setSelectedId] = useState(document.root.id);
   const [activeTab, setActiveTab] = useState<Tab>("edit");
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [noteEditorNodeId, setNoteEditorNodeId] = useState<string | null>(null);
+  const [deletePromptNodeId, setDeletePromptNodeId] = useState<string | null>(null);
   const [inlineEditRequest, setInlineEditRequest] = useState(0);
   const [mermaidInput, setMermaidInput] = useState("mindmap\n  Brainstorm\n    Audience\n    Product\n    Distribution");
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -281,8 +286,30 @@ export default function App() {
   const noteEditorRef = useRef<HTMLTextAreaElement>(null);
   const isSpacePanningRef = useRef(false);
 
+  const commitDocument = useCallback(
+    (update: DocumentUpdate, nextSelectedId?: string) => {
+      const next = typeof update === "function" ? update(document) : update;
+      if (next === document) return;
+      setUndoStack((stack) => [...stack.slice(-49), { document, selectedId }]);
+      setDocument(next);
+      if (nextSelectedId) setSelectedId(nextSelectedId);
+    },
+    [document, selectedId],
+  );
+
+  const undoLastChange = useCallback(() => {
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setDocument(previous.document);
+    setSelectedId(findNode(previous.document.root, previous.selectedId) ? previous.selectedId : previous.document.root.id);
+    setDeletePromptNodeId(null);
+    setNoteEditorNodeId(null);
+  }, [undoStack]);
+
   const selectedNode = findNode(document.root, selectedId) ?? document.root;
   const noteEditorNode = noteEditorNodeId ? findNode(document.root, noteEditorNodeId) : undefined;
+  const deletePromptNode = deletePromptNodeId ? findNode(document.root, deletePromptNodeId) : undefined;
   const mermaidOutput = useMemo(() => serializeMermaidMindmap(document), [document]);
   const dataOutput = useMemo(() => JSON.stringify(document, null, 2), [document]);
   const excalidrawOutput = useMemo(() => JSON.stringify(serializeExcalidrawMindmap(document), null, 2), [document]);
@@ -303,6 +330,10 @@ export default function App() {
   useEffect(() => {
     if (noteEditorNodeId && !findNode(document.root, noteEditorNodeId)) setNoteEditorNodeId(null);
   }, [document, noteEditorNodeId]);
+
+  useEffect(() => {
+    if (deletePromptNodeId && !findNode(document.root, deletePromptNodeId)) setDeletePromptNodeId(null);
+  }, [document, deletePromptNodeId]);
 
   useEffect(() => {
     if (!noteEditorNodeId) return;
@@ -386,29 +417,28 @@ export default function App() {
       if (event.key === "Tab") {
         event.preventDefault();
         const child = createNode("New idea");
-        setDocument((current) => appendNode(current, selectedId, child));
-        setSelectedId(child.id);
+        commitDocument((current) => appendNode(current, selectedId, child), child.id);
         setInlineEditRequest((count) => count + 1);
       }
       if (event.key === "Enter" && event.ctrlKey) {
         event.preventDefault();
         const result = insertIntermediateNode(document, selectedId, "New idea");
-        setDocument(result.document);
-        setSelectedId(result.node.id);
+        commitDocument(result.document, result.node.id);
         setInlineEditRequest((count) => count + 1);
       } else if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         const result = addSibling(document, selectedId, "New idea");
-        setDocument(result.document);
-        setSelectedId(result.node.id);
+        commitDocument(result.document, result.node.id);
         setInlineEditRequest((count) => count + 1);
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoLastChange();
       }
       if (event.key === "Delete" || event.key === "Backspace") {
         if (selectedId !== document.root.id) {
           event.preventDefault();
-          const parent = findParentNode(document.root, selectedId) ?? document.root;
-          setDocument((current) => deleteNode(current, selectedId));
-          setSelectedId(parent.id);
+          setDeletePromptNodeId(selectedId);
         }
       }
       if (event.key === "ArrowUp") {
@@ -444,31 +474,33 @@ export default function App() {
       window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", resetSpacePanning);
     };
-  }, [document, selectedId]);
+  }, [commitDocument, document, selectedId, undoLastChange]);
 
   const updateSelected = (updates: Partial<Pick<MindmapNode, "title" | "body">>) => {
-    setDocument((current) => updateNode(current, selectedNode.id, updates));
+    commitDocument((current) => updateNode(current, selectedNode.id, updates));
   };
 
-  const deleteSelectedNode = () => {
-    if (selectedNode.id === document.root.id) return;
-    const parent = findParentNode(document.root, selectedNode.id) ?? document.root;
-    setDocument((current) => deleteNode(current, selectedNode.id));
-    setSelectedId(parent.id);
+  const requestDeleteSelectedNode = () => {
+    if (selectedNode.id !== document.root.id) setDeletePromptNodeId(selectedNode.id);
+  };
+
+  const confirmDeleteNode = (mode: "single" | "subtree") => {
+    if (!deletePromptNode || deletePromptNode.id === document.root.id) return;
+    const parent = findParentNode(document.root, deletePromptNode.id) ?? document.root;
+    commitDocument((current) => (mode === "single" ? deleteNode(current, deletePromptNode.id) : deleteNodeSubtree(current, deletePromptNode.id)), parent.id);
+    setDeletePromptNodeId(null);
   };
 
   const moveSelectedNodeToRoot = () => {
     if (selectedNode.id === document.root.id) return;
-    setDocument((current) => moveNode(current, selectedNode.id, current.root.id));
-    setSelectedId(selectedNode.id);
+    commitDocument((current) => moveNode(current, selectedNode.id, current.root.id), selectedNode.id);
   };
 
   const dropOutlineNode = (draggedId: string, targetId: string, position: DropPosition) => {
     setOutlineDropTarget(null);
     if (draggedId === targetId || draggedId === document.root.id) return;
     try {
-      setDocument((current) => (position === "inside" ? moveNode(current, draggedId, targetId) : reorderNode(current, draggedId, targetId, position)));
-      setSelectedId(draggedId);
+      commitDocument((current) => (position === "inside" ? moveNode(current, draggedId, targetId) : reorderNode(current, draggedId, targetId, position)), draggedId);
     } catch (error) {
       setWarnings([error instanceof Error ? error.message : String(error)]);
     }
@@ -477,15 +509,14 @@ export default function App() {
   const moveOutlineNode = (nodeId: string, direction: "up" | "down") => {
     if (nodeId === document.root.id) return;
     try {
-      setDocument((current) => {
+      commitDocument((current) => {
         const parent = findParentNode(current.root, nodeId);
         if (!parent) return current;
         const index = parent.children.findIndex((child) => child.id === nodeId);
         const target = parent.children[direction === "up" ? index - 1 : index + 1];
         if (!target) return current;
         return reorderNode(current, nodeId, target.id, direction === "up" ? "before" : "after");
-      });
-      setSelectedId(nodeId);
+      }, nodeId);
     } catch (error) {
       setWarnings([error instanceof Error ? error.message : String(error)]);
     }
@@ -532,8 +563,7 @@ export default function App() {
     setCloudStatus("Loading mindmap from Neon...");
     try {
       const payload = await readApiJson<{ document: MindmapDocument }>(await fetch(`/api/mindmaps/${encodeURIComponent(id)}`));
-      setDocument(payload.document);
-      setSelectedId(payload.document.root.id);
+      commitDocument(payload.document, payload.document.root.id);
       setCloudStatus(`Loaded "${payload.document.title}" from Neon.`);
       setActiveTab("edit");
     } catch (error) {
@@ -608,16 +638,14 @@ export default function App() {
 
   const importMermaid = () => {
     const result = parseMermaidMindmap(mermaidInput);
-    setDocument(result.document);
-    setSelectedId(result.document.root.id);
+    commitDocument(result.document, result.document.root.id);
     setWarnings(result.warnings);
   };
 
   const importExcalidrawFile = async (file: File) => {
     const content = await readFileText(file);
     const result = parseExcalidrawMindmap(JSON.parse(content));
-    setDocument(result.document);
-    setSelectedId(result.document.root.id);
+    commitDocument(result.document, result.document.root.id);
     setWarnings(result.warnings);
   };
 
@@ -629,15 +657,13 @@ export default function App() {
       setActiveTab("import");
       return;
     }
-    setDocument(parsed);
-    setSelectedId(parsed.root.id);
+    commitDocument(parsed, parsed.root.id);
     setWarnings([]);
   };
 
   const resetData = () => {
     const nextDocument = createMindmapDocument("Brainstorm");
-    setDocument(nextDocument);
-    setSelectedId(nextDocument.root.id);
+    commitDocument(nextDocument, nextDocument.root.id);
     setWarnings([]);
     setActiveTab("edit");
   };
@@ -667,6 +693,9 @@ export default function App() {
         <div className="header-actions">
           <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light theme" : "Dark theme"}
+          </button>
+          <button type="button" disabled={undoStack.length === 0} onClick={undoLastChange}>
+            Undo
           </button>
           <button type="button" onClick={downloadJson}>
             Download JSON
@@ -731,7 +760,7 @@ export default function App() {
             inlineEditRequest={inlineEditRequest}
             theme={theme}
             showNoteEditorInContextMenu={!isInspectorOpen}
-            onDocumentChange={setDocument}
+            onDocumentChange={commitDocument}
             onSelectedNodeChange={setSelectedId}
             onEditNodeNotes={setNoteEditorNodeId}
           />
@@ -801,7 +830,7 @@ export default function App() {
                     aria-label="Popup notes"
                     value={noteEditorNode.body ?? ""}
                     rows={16}
-                    onChange={(event) => setDocument((current) => updateNode(current, noteEditorNode.id, { body: event.target.value }))}
+                    onChange={(event) => commitDocument((current) => updateNode(current, noteEditorNode.id, { body: event.target.value }))}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         event.preventDefault();
@@ -810,6 +839,36 @@ export default function App() {
                     }}
                   />
                 </label>
+              </section>
+            </div>
+          ) : null}
+          {deletePromptNode ? (
+            <div className="delete-dialog-backdrop" role="presentation" onMouseDown={() => setDeletePromptNodeId(null)}>
+              <section
+                className="delete-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Delete ${deletePromptNode.title}`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div>
+                  <p className="label">Delete node</p>
+                  <h2>{deletePromptNode.title}</h2>
+                </div>
+                <p>
+                  This node has {deletePromptNode.children.length} child node{deletePromptNode.children.length === 1 ? "" : "s"}. Choose how much to delete.
+                </p>
+                <div className="delete-dialog-actions">
+                  <button type="button" onClick={() => confirmDeleteNode("single")}>
+                    Delete only this node
+                  </button>
+                  <button type="button" onClick={() => confirmDeleteNode("subtree")}>
+                    Delete node and children
+                  </button>
+                  <button type="button" onClick={() => setDeletePromptNodeId(null)}>
+                    Cancel
+                  </button>
+                </div>
               </section>
             </div>
           ) : null}
@@ -837,7 +896,7 @@ export default function App() {
                 Map file name
                 <input
                   value={document.title}
-                  onChange={(event) => setDocument((current) => renameMindmapDocument(current, event.target.value))}
+                  onChange={(event) => commitDocument((current) => renameMindmapDocument(current, event.target.value))}
                 />
               </label>
               <label>
@@ -857,8 +916,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     const child = createNode("New idea");
-                    setDocument((current) => appendNode(current, selectedNode.id, child));
-                    setSelectedId(child.id);
+                    commitDocument((current) => appendNode(current, selectedNode.id, child), child.id);
                     setInlineEditRequest((count) => count + 1);
                   }}
                 >
@@ -867,7 +925,7 @@ export default function App() {
                 <button
                   type="button"
                   disabled={selectedNode.id === document.root.id}
-                  onClick={deleteSelectedNode}
+                  onClick={requestDeleteSelectedNode}
                 >
                   Delete node
                 </button>
@@ -884,7 +942,7 @@ export default function App() {
                 <select
                   value=""
                   onChange={(event) => {
-                    if (event.target.value) setDocument((current) => moveNode(current, selectedNode.id, event.target.value));
+                    if (event.target.value) commitDocument((current) => moveNode(current, selectedNode.id, event.target.value));
                   }}
                   disabled={selectedNode.id === document.root.id}
                 >

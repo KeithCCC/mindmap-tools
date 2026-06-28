@@ -286,7 +286,8 @@ h2 {
 }
 
 .theme-dark .outline-dialog,
-.theme-dark .note-editor-dialog {
+.theme-dark .note-editor-dialog,
+.theme-dark .delete-dialog {
   background: #111827;
   border-color: #334155;
   color: #e5e7eb;
@@ -324,6 +325,17 @@ h2 {
   z-index: 70;
 }
 
+.delete-dialog-backdrop {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.32);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 75;
+}
+
 .note-editor-dialog {
   background: #ffffff;
   border: 1px solid #cfd8e6;
@@ -335,6 +347,34 @@ h2 {
   max-width: min(860px, calc(100vw - 48px));
   padding: 18px;
   width: min(760px, calc(100vw - 48px));
+}
+
+.delete-dialog {
+  background: #ffffff;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+  display: grid;
+  gap: 14px;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 18px;
+  width: min(520px, calc(100vw - 48px));
+}
+
+.delete-dialog p {
+  color: #3a465a;
+  margin: 0;
+}
+
+.theme-dark .delete-dialog p {
+  color: #cbd5e1;
+}
+
+.delete-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .note-editor-header {

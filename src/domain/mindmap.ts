@@ -74,6 +74,15 @@ export function findNode(node: MindmapNode, id: string): MindmapNode | undefined
   return undefined;
 }
 
+export function findParentNode(node: MindmapNode, childId: string): MindmapNode | undefined {
+  if (node.children.some((child) => child.id === childId)) return node;
+  for (const child of node.children) {
+    const found = findParentNode(child, childId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function hasDescendant(node: MindmapNode, id: string): boolean {
   return node.children.some((child) => child.id === id || hasDescendant(child, id));
 }
@@ -122,6 +131,31 @@ export function appendNode(document: MindmapDocument, parentId: string, child: M
   return touchDocument(document, root);
 }
 
+export function insertIntermediateNode(
+  document: MindmapDocument,
+  nodeId: string,
+  title = "New idea",
+): { document: MindmapDocument; node: MindmapNode } {
+  const intermediate = createNode(title);
+  if (document.root.id === nodeId) {
+    const root = {
+      ...document.root,
+      children: [{ ...intermediate, children: document.root.children }],
+    };
+    return { document: touchDocument(document, root), node: intermediate };
+  }
+
+  const replaceTarget = (node: MindmapNode): MindmapNode => ({
+    ...node,
+    children: node.children.map((child) => {
+      if (child.id === nodeId) return { ...intermediate, children: [child] };
+      return replaceTarget(child);
+    }),
+  });
+  const root = replaceTarget(document.root);
+  return { document: touchDocument(document, root), node: intermediate };
+}
+
 export function updateNode(
   document: MindmapDocument,
   nodeId: string,
@@ -137,17 +171,15 @@ export function updateNode(
 
 function removeNode(node: MindmapNode, id: string): { node: MindmapNode; removed?: MindmapNode } {
   let removed: MindmapNode | undefined;
-  const children = node.children
-    .map((child) => {
-      if (child.id === id) {
-        removed = child;
-        return undefined;
-      }
-      const result = removeNode(child, id);
-      if (result.removed) removed = result.removed;
-      return result.node;
-    })
-    .filter((child): child is MindmapNode => Boolean(child));
+  const children = node.children.flatMap((child) => {
+    if (child.id === id) {
+      removed = child;
+      return child.children;
+    }
+    const result = removeNode(child, id);
+    if (result.removed) removed = result.removed;
+    return [result.node];
+  });
   return { node: { ...node, children }, removed };
 }
 
@@ -155,6 +187,22 @@ export function deleteNode(document: MindmapDocument, nodeId: string): MindmapDo
   if (document.root.id === nodeId) return document;
   const result = removeNode(document.root, nodeId);
   return touchDocument(document, result.node);
+}
+
+function extractNode(node: MindmapNode, id: string): { node: MindmapNode; removed?: MindmapNode } {
+  let removed: MindmapNode | undefined;
+  const children = node.children
+    .map((child) => {
+      if (child.id === id) {
+        removed = child;
+        return undefined;
+      }
+      const result = extractNode(child, id);
+      if (result.removed) removed = result.removed;
+      return result.node;
+    })
+    .filter((child): child is MindmapNode => Boolean(child));
+  return { node: { ...node, children }, removed };
 }
 
 export function moveNode(document: MindmapDocument, nodeId: string, newParentId: string): MindmapDocument {
@@ -166,13 +214,40 @@ export function moveNode(document: MindmapDocument, nodeId: string, newParentId:
     throw new Error("Cannot move a node into its own descendant");
   }
 
-  const removed = removeNode(document.root, nodeId);
+  const removed = extractNode(document.root, nodeId);
   if (!removed.removed) throw new Error("Node not found");
 
   const root = mapNode(removed.node, newParentId, (node) => ({
     ...node,
     children: [...node.children, removed.removed!],
   }));
+  return touchDocument(document, root);
+}
+
+export function reorderNode(
+  document: MindmapDocument,
+  nodeId: string,
+  targetId: string,
+  position: "before" | "after",
+): MindmapDocument {
+  if (nodeId === document.root.id || nodeId === targetId) return document;
+  const moving = findNode(document.root, nodeId);
+  const targetParent = findParentNode(document.root, targetId);
+  if (!moving || !targetParent) throw new Error("Node not found");
+  if (hasDescendant(moving, targetId)) throw new Error("Cannot move a node next to its own descendant");
+
+  const removed = extractNode(document.root, nodeId);
+  if (!removed.removed) throw new Error("Node not found");
+
+  const root = mapNode(removed.node, targetParent.id, (node) => {
+    const targetIndex = node.children.findIndex((child) => child.id === targetId);
+    if (targetIndex < 0) return node;
+    const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+    return {
+      ...node,
+      children: [...node.children.slice(0, insertIndex), removed.removed!, ...node.children.slice(insertIndex)],
+    };
+  });
   return touchDocument(document, root);
 }
 

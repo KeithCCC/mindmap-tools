@@ -6,13 +6,14 @@ describe("Mind Elixir conversion", () => {
   it("converts canonical documents to Mind Elixir data", () => {
     let doc = createMindmapDocument("Brainstorm");
     doc = addNode(doc, doc.root.id, "Audience");
-    doc = updateNode(doc, doc.root.children[0].id, { body: "People with early ideas." });
+    doc = updateNode(doc, doc.root.children[0].id, { body: "People with early ideas.", visual: { color: "#dcfce7" } });
 
     const data = toMindElixirData(doc);
 
     expect(data.nodeData.topic).toBe("Brainstorm");
     expect(data.nodeData.children?.[0].topic).toBe("Audience");
     expect(data.nodeData.children?.[0].note).toBe("People with early ideas.");
+    expect(data.nodeData.children?.[0].style?.background).toBe("#dcfce7");
     expect(data.meta?.mindmapToolsDocumentId).toBe(doc.id);
   });
 
@@ -20,7 +21,7 @@ describe("Mind Elixir conversion", () => {
     const doc = createMindmapDocument("Brainstorm");
     const data = toMindElixirData(doc);
     data.nodeData.topic = "Updated";
-    data.nodeData.children = [{ id: "child-1", topic: "New child", note: "Captured note" }];
+    data.nodeData.children = [{ id: "child-1", topic: "New child", note: "Captured note", style: { background: "#fee2e2" } }];
 
     const next = fromMindElixirData(data, doc);
 
@@ -30,6 +31,7 @@ describe("Mind Elixir conversion", () => {
       id: "child-1",
       title: "New child",
       body: "Captured note",
+      visual: { color: "#fee2e2" },
     });
   });
 });

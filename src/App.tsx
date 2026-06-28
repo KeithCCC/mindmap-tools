@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { strToU8, zipSync } from "fflate";
 import {
   appendNode,
@@ -7,11 +7,14 @@ import {
   createMindmapDocument,
   deleteNode,
   findNode,
+  findParentNode,
   flattenNodes,
+  insertIntermediateNode,
   MindmapDocument,
   MindmapNode,
   moveNode,
   renameMindmapDocument,
+  reorderNode,
   updateNode,
 } from "./domain/mindmap";
 import { parseExcalidrawMindmap, serializeExcalidrawMindmap } from "./converters/excalidraw";
@@ -22,6 +25,8 @@ import { MindElixirEditor } from "./components/MindElixirEditor";
 const storageKey = "mindmap-tools.document";
 
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
+type DropPosition = "before" | "after" | "inside";
+type OutlineDropTarget = { id: string; position: DropPosition } | null;
 
 type CloudMindmapSummary = {
   id: string;
@@ -114,27 +119,122 @@ function isMindmapDocument(value: unknown): value is MindmapDocument {
 
 function TreeNode({
   node,
+  rootId,
+  siblingIndex,
+  siblingCount,
   selectedId,
+  dropTarget,
+  collapsedIds,
   onSelect,
+  onToggleCollapse,
+  onMoveNode,
+  onDragOverNode,
+  onDropNode,
+  onDragEnd,
 }: {
   node: MindmapNode;
+  rootId: string;
+  siblingIndex?: number;
+  siblingCount?: number;
   selectedId: string;
+  dropTarget: OutlineDropTarget;
+  collapsedIds: Set<string>;
   onSelect: (id: string) => void;
+  onToggleCollapse: (id: string) => void;
+  onMoveNode: (id: string, direction: "up" | "down") => void;
+  onDragOverNode: (id: string, position: DropPosition) => void;
+  onDropNode: (draggedId: string, targetId: string, position: DropPosition) => void;
+  onDragEnd: () => void;
 }) {
+  const getDropPosition = (event: DragEvent<HTMLButtonElement>): DropPosition => {
+    if (node.id === rootId) return "inside";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offset = event.clientY - rect.top;
+    if (offset < rect.height * 0.33) return "before";
+    if (offset > rect.height * 0.67) return "after";
+    return "inside";
+  };
+  const canDrag = node.id !== rootId;
+  const dropClass =
+    dropTarget?.id === node.id
+      ? dropTarget.position === "before"
+        ? "node-drop-before"
+        : dropTarget.position === "after"
+          ? "node-drop-after"
+          : "node-drop-inside"
+      : "";
+  const isCollapsed = collapsedIds.has(node.id);
+  const hasChildren = node.children.length > 0;
+  const canMoveUp = canDrag && siblingIndex !== undefined && siblingIndex > 0;
+  const canMoveDown = canDrag && siblingIndex !== undefined && siblingCount !== undefined && siblingIndex < siblingCount - 1;
+
   return (
     <li>
-      <button
-        className={node.id === selectedId ? "node node-selected" : "node"}
-        type="button"
-        onClick={() => onSelect(node.id)}
-        aria-current={node.id === selectedId ? "true" : undefined}
-      >
-        {node.title}
-      </button>
-      {node.children.length > 0 ? (
+      <div className="tree-node-row">
+        <button
+          type="button"
+          className="tree-toggle"
+          disabled={!hasChildren}
+          aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${node.title}`}
+          onClick={() => onToggleCollapse(node.id)}
+        >
+          {hasChildren ? (isCollapsed ? "+" : "-") : ""}
+        </button>
+        <button
+          className={`${node.id === selectedId ? "node node-selected" : "node"} ${dropClass}`.trim()}
+          type="button"
+          draggable={canDrag}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("application/x-mindmap-node", node.id);
+            event.dataTransfer.setData("text/plain", node.id);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            onDragOverNode(node.id, getDropPosition(event));
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const draggedId = event.dataTransfer.getData("application/x-mindmap-node") || event.dataTransfer.getData("text/plain");
+            if (draggedId) onDropNode(draggedId, node.id, getDropPosition(event));
+          }}
+          onDragEnd={onDragEnd}
+          onClick={() => onSelect(node.id)}
+          aria-current={node.id === selectedId ? "true" : undefined}
+        >
+          {node.title}
+        </button>
+        {canDrag ? (
+          <div className="node-order-controls" aria-label={`Order ${node.title}`}>
+            <button type="button" disabled={!canMoveUp} onClick={() => onMoveNode(node.id, "up")} aria-label={`Move ${node.title} up`}>
+              Up
+            </button>
+            <button type="button" disabled={!canMoveDown} onClick={() => onMoveNode(node.id, "down")} aria-label={`Move ${node.title} down`}>
+              Down
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {hasChildren && !isCollapsed ? (
         <ul>
-          {node.children.map((child) => (
-            <TreeNode key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} />
+          {node.children.map((child, index) => (
+            <TreeNode
+              key={child.id}
+              node={child}
+              rootId={rootId}
+              siblingIndex={index}
+              siblingCount={node.children.length}
+              selectedId={selectedId}
+              dropTarget={dropTarget}
+              collapsedIds={collapsedIds}
+              onSelect={onSelect}
+              onToggleCollapse={onToggleCollapse}
+              onMoveNode={onMoveNode}
+              onDragOverNode={onDragOverNode}
+              onDropNode={onDropNode}
+              onDragEnd={onDragEnd}
+            />
           ))}
         </ul>
       ) : null}
@@ -165,6 +265,9 @@ export default function App() {
   const [cloudStatus, setCloudStatus] = useState("Cloud storage not checked yet.");
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [localFileStatus, setLocalFileStatus] = useState("Local JSON export is ready.");
+  const [outlineDropTarget, setOutlineDropTarget] = useState<OutlineDropTarget>(null);
+  const [isOutlineOpen, setIsOutlineOpen] = useState(false);
+  const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(() => new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -226,7 +329,13 @@ export default function App() {
         setSelectedId(child.id);
         setInlineEditRequest((count) => count + 1);
       }
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (event.key === "Enter" && event.ctrlKey) {
+        event.preventDefault();
+        const result = insertIntermediateNode(document, selectedId, "New idea");
+        setDocument(result.document);
+        setSelectedId(result.node.id);
+        setInlineEditRequest((count) => count + 1);
+      } else if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         const result = addSibling(document, selectedId, "New idea");
         setDocument(result.document);
@@ -236,8 +345,9 @@ export default function App() {
       if (event.key === "Delete" || event.key === "Backspace") {
         if (selectedId !== document.root.id) {
           event.preventDefault();
+          const parent = findParentNode(document.root, selectedId) ?? document.root;
           setDocument((current) => deleteNode(current, selectedId));
-          setSelectedId(document.root.id);
+          setSelectedId(parent.id);
         }
       }
       if (event.key === "ArrowUp") {
@@ -264,6 +374,47 @@ export default function App() {
 
   const updateSelected = (updates: Partial<Pick<MindmapNode, "title" | "body">>) => {
     setDocument((current) => updateNode(current, selectedNode.id, updates));
+  };
+
+  const deleteSelectedNode = () => {
+    if (selectedNode.id === document.root.id) return;
+    const parent = findParentNode(document.root, selectedNode.id) ?? document.root;
+    setDocument((current) => deleteNode(current, selectedNode.id));
+    setSelectedId(parent.id);
+  };
+
+  const moveSelectedNodeToRoot = () => {
+    if (selectedNode.id === document.root.id) return;
+    setDocument((current) => moveNode(current, selectedNode.id, current.root.id));
+    setSelectedId(selectedNode.id);
+  };
+
+  const dropOutlineNode = (draggedId: string, targetId: string, position: DropPosition) => {
+    setOutlineDropTarget(null);
+    if (draggedId === targetId || draggedId === document.root.id) return;
+    try {
+      setDocument((current) => (position === "inside" ? moveNode(current, draggedId, targetId) : reorderNode(current, draggedId, targetId, position)));
+      setSelectedId(draggedId);
+    } catch (error) {
+      setWarnings([error instanceof Error ? error.message : String(error)]);
+    }
+  };
+
+  const moveOutlineNode = (nodeId: string, direction: "up" | "down") => {
+    if (nodeId === document.root.id) return;
+    try {
+      setDocument((current) => {
+        const parent = findParentNode(current.root, nodeId);
+        if (!parent) return current;
+        const index = parent.children.findIndex((child) => child.id === nodeId);
+        const target = parent.children[direction === "up" ? index - 1 : index + 1];
+        if (!target) return current;
+        return reorderNode(current, nodeId, target.id, direction === "up" ? "before" : "after");
+      });
+      setSelectedId(nodeId);
+    } catch (error) {
+      setWarnings([error instanceof Error ? error.message : String(error)]);
+    }
   };
 
   // Neon cloud storage is implemented for future work, but hidden from the UI while local JSON file management is the primary workflow.
@@ -419,6 +570,19 @@ export default function App() {
 
   const allNodes = flattenNodes(document.root);
 
+  const toggleOutlineCollapse = (id: string) => {
+    setCollapsedOutlineIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const collapseAllOutlineNodes = () => {
+    setCollapsedOutlineIds(new Set(allNodes.filter((node) => node.children.length > 0).map((node) => node.id)));
+  };
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -469,6 +633,9 @@ export default function App() {
             <h2>Brainstorm editor</h2>
             <div className="panel-actions">
               <span>{allNodes.length} nodes</span>
+              <button type="button" className="inspector-toggle" onClick={() => setIsOutlineOpen(true)}>
+                Open outline
+              </button>
               <button
                 type="button"
                 className="inspector-toggle"
@@ -487,12 +654,47 @@ export default function App() {
             onDocumentChange={setDocument}
             onSelectedNodeChange={setSelectedId}
           />
-          <details className="outline-panel" aria-label="Mindmap tree">
-            <summary className="outline-title">Semantic outline</summary>
-            <ul className="tree">
-              <TreeNode node={document.root} selectedId={selectedId} onSelect={setSelectedId} />
-            </ul>
-          </details>
+          {isOutlineOpen ? (
+            <div className="outline-backdrop" role="presentation" onMouseDown={() => setIsOutlineOpen(false)}>
+              <section className="outline-dialog" role="dialog" aria-modal="true" aria-label="Semantic outline" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="outline-dialog-header">
+                  <div>
+                    <p className="label">Semantic outline</p>
+                    <h2>Tree order</h2>
+                  </div>
+                  <div className="outline-actions">
+                    <button type="button" onClick={collapseAllOutlineNodes}>
+                      Collapse all
+                    </button>
+                    <button type="button" onClick={() => setCollapsedOutlineIds(new Set())}>
+                      Expand all
+                    </button>
+                    <button type="button" onClick={() => setIsOutlineOpen(false)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+                <p className="outline-help">Use Up/Down to sort siblings. Drag onto the top or bottom of a node to sort, or drop in the middle to move under that node.</p>
+                <div className="outline-scroll">
+                  <ul className="tree">
+                    <TreeNode
+                      node={document.root}
+                      rootId={document.root.id}
+                      selectedId={selectedId}
+                      dropTarget={outlineDropTarget}
+                      collapsedIds={collapsedOutlineIds}
+                      onSelect={setSelectedId}
+                      onToggleCollapse={toggleOutlineCollapse}
+                      onMoveNode={moveOutlineNode}
+                      onDragOverNode={(id, position) => setOutlineDropTarget({ id, position })}
+                      onDropNode={dropOutlineNode}
+                      onDragEnd={() => setOutlineDropTarget(null)}
+                    />
+                  </ul>
+                </div>
+              </section>
+            </div>
+          ) : null}
         </div>
 
         <aside id="property-inspector" className="side-panel" hidden={!isInspectorOpen}>
@@ -547,9 +749,16 @@ export default function App() {
                 <button
                   type="button"
                   disabled={selectedNode.id === document.root.id}
-                  onClick={() => setDocument((current) => deleteNode(current, selectedNode.id))}
+                  onClick={deleteSelectedNode}
                 >
                   Delete node
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedNode.id === document.root.id || findParentNode(document.root, selectedNode.id)?.id === document.root.id}
+                  onClick={moveSelectedNodeToRoot}
+                >
+                  Move to root
                 </button>
               </div>
               <label>

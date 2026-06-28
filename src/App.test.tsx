@@ -26,6 +26,27 @@ async function blobText(blob: Blob): Promise<string> {
   });
 }
 
+function createDataTransfer() {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: "move",
+    effectAllowed: "move",
+    getData: (type: string) => data.get(type) ?? "",
+    setData: (type: string, value: string) => data.set(type, value),
+  };
+}
+
+function createDragEvent(type: string, dataTransfer: ReturnType<typeof createDataTransfer>, clientY: number) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  Object.defineProperty(event, "clientY", { value: clientY });
+  return event;
+}
+
+function getRootChildTitles() {
+  return Array.from(document.querySelectorAll(".tree > li > ul > li > .tree-node-row > button.node")).map((element) => element.textContent);
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -154,6 +175,201 @@ describe("App", () => {
     expect(screen.getByLabelText("Selected node title")).toHaveValue("Brainstorm");
   });
 
+  it("selects the parent node and preserves children after deleting a nested selected node", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Parent idea");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "Nested idea");
+    await user.click(screen.getByRole("button", { name: "Delete node" }));
+
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("Parent idea");
+  });
+
+  it("deletes only the highlighted node from a chain", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "A");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "B");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "C");
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "B" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Delete node" }));
+
+    expect(screen.queryByRole("button", { name: "B" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    expect(screen.getByRole("button", { name: "C" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("A");
+  });
+
+  it("reorders outline nodes by dragging above another node", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    for (const title of ["A", "B", "C"]) {
+      await user.click(screen.getByRole("button", { name: "Add child" }));
+      const titleInput = screen.getByLabelText("Selected node title");
+      await user.clear(titleInput);
+      await user.type(titleInput, title);
+      await user.click(screen.getByTestId("mind-elixir-editor"));
+      await user.keyboard("{ArrowLeft}");
+    }
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    const cButton = screen.getByRole("button", { name: "C" });
+    const aButton = screen.getByRole("button", { name: "A" });
+    vi.spyOn(aButton, "getBoundingClientRect").mockReturnValue({
+      bottom: 20,
+      height: 20,
+      left: 0,
+      right: 120,
+      top: 0,
+      width: 120,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = createDataTransfer();
+
+    fireEvent(cButton, createDragEvent("dragstart", dataTransfer, -1));
+    fireEvent(aButton, createDragEvent("dragover", dataTransfer, -1));
+    fireEvent(aButton, createDragEvent("drop", dataTransfer, -1));
+
+    const rootChildTitles = getRootChildTitles();
+    expect(rootChildTitles).toEqual(["C", "A", "B"]);
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("C");
+  });
+
+  it("moves an outline node under the root by dropping onto the root", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Personal");
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "FMI");
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    const fmiButton = screen.getByRole("button", { name: "FMI" });
+    const rootButton = screen.getByRole("button", { name: "Brainstorm" });
+    vi.spyOn(rootButton, "getBoundingClientRect").mockReturnValue({
+      bottom: 30,
+      height: 30,
+      left: 0,
+      right: 140,
+      top: 0,
+      width: 140,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = createDataTransfer();
+
+    fireEvent(fmiButton, createDragEvent("dragstart", dataTransfer, 15));
+    fireEvent(rootButton, createDragEvent("dragover", dataTransfer, 15));
+    fireEvent(rootButton, createDragEvent("drop", dataTransfer, 15));
+
+    const rootChildTitles = getRootChildTitles();
+    expect(rootChildTitles).toEqual(["Personal", "FMI"]);
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("FMI");
+  });
+
+  it("moves the selected node back under the root from the edit panel", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Personal");
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "FMI");
+
+    await user.click(screen.getByRole("button", { name: "Move to root" }));
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    const rootChildTitles = getRootChildTitles();
+    expect(rootChildTitles).toEqual(["Personal", "FMI"]);
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("FMI");
+  });
+
+  it("moves an outline node above its sibling with order controls", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Personal");
+    await user.click(screen.getByTestId("mind-elixir-editor"));
+    await user.keyboard("{ArrowLeft}");
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "FMI");
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Move FMI up" }));
+
+    expect(getRootChildTitles()).toEqual(["FMI", "Personal"]);
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("FMI");
+  });
+
+  it("opens the semantic outline as a floating dialog", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+
+    expect(screen.getByRole("dialog", { name: "Semantic outline" })).toBeInTheDocument();
+    expect(screen.getByText("Use Up/Down to sort siblings. Drag onto the top or bottom of a node to sort, or drop in the middle to move under that node.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse all" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand all" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Semantic outline" })).not.toBeInTheDocument();
+  });
+
+  it("collapses and expands outline branches", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Parent");
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "Child");
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+
+    expect(screen.getByRole("button", { name: "Child" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(screen.queryByRole("button", { name: "Child" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(screen.getByRole("button", { name: "Child" })).toBeInTheDocument();
+  });
+
   it("hides Neon cloud storage controls while local file management is primary", () => {
     render(<App />);
 
@@ -170,6 +386,7 @@ describe("App", () => {
     await user.clear(titleInput);
     await user.type(titleInput, "Market research");
 
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
     expect(screen.getByRole("button", { name: "Market research" })).toBeInTheDocument();
   });
 
@@ -201,6 +418,30 @@ describe("App", () => {
     expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(initialSelectedId);
   });
 
+  it("opens inline editing after inserting an intermediate node with Ctrl+Enter", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const editor = screen.getByTestId("mind-elixir-editor");
+    const initialSelectedId = editor.dataset.selectedNodeId;
+    const titleInput = screen.getByLabelText("Selected node title");
+
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    await user.clear(titleInput);
+    await user.type(titleInput, "Target node");
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Target node" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mind-elixir-editor")).toHaveAttribute("data-inline-edit-request", "2");
+    });
+    expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(initialSelectedId);
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    expect(screen.getByRole("button", { name: "Target node" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected node title")).toHaveValue("New idea");
+  });
+
   it("imports Mermaid text and updates the tree", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -209,6 +450,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Mermaid mindmap input"), "mindmap\n  Plan\n    UX\n    Data");
     await user.click(screen.getByRole("button", { name: /import mermaid/i }));
 
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
     expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "UX" })).toBeInTheDocument();
   });

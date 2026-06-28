@@ -1,6 +1,6 @@
 import MindElixir, { type MindElixirInstance } from "mind-elixir";
 import { useEffect, useRef, useState } from "react";
-import { MindmapDocument, updateNode } from "../domain/mindmap";
+import { findNode, MindmapDocument, MindmapNode, moveNode, updateNode } from "../domain/mindmap";
 import { fromMindElixirData, toMindElixirData } from "../converters/mindElixir";
 
 type InlineEditState = {
@@ -12,11 +12,37 @@ type InlineEditState = {
   height: number;
 };
 
-function markSelectedNode(host: HTMLElement | null, id: string) {
+type ColorMenuState = {
+  id: string;
+  left: number;
+  top: number;
+};
+
+const nodeColors = ["#ffffff", "#e7f0ff", "#dcfce7", "#fef3c7", "#fee2e2", "#ede9fe", "#cffafe", "#fce7f3"];
+
+function findNodeByTitle(node: MindmapNode, title: string): MindmapNode | undefined {
+  if (node.title === title) return node;
+  for (const child of node.children) {
+    const found = findNodeByTitle(child, title);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function getTopicNodeId(topic: Element, document: MindmapDocument): string | undefined {
+  const nodeObj = (topic as unknown as { nodeObj?: { id?: string } }).nodeObj;
+  if (nodeObj?.id) return nodeObj.id;
+  const title = topic.textContent?.trim();
+  if (!title) return undefined;
+  return findNodeByTitle(document.root, title)?.id;
+}
+
+function markSelectedNode(host: HTMLElement | null, id: string, document?: MindmapDocument) {
   if (!host) return;
   host.querySelectorAll("me-tpc.current-node").forEach((element) => element.classList.remove("current-node"));
+  const selectedTitle = document ? findNode(document.root, id)?.title : undefined;
   const topic = Array.from(host.querySelectorAll("me-tpc")).find(
-    (element) => (element as unknown as { nodeObj?: { id?: string } }).nodeObj?.id === id,
+    (element) => (element as unknown as { nodeObj?: { id?: string } }).nodeObj?.id === id || element.textContent?.trim() === selectedTitle,
   );
   topic?.classList.add("current-node");
 }
@@ -43,6 +69,7 @@ export function MindElixirEditor({
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const selectedInlineEditIdRef = useRef<string | null>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
+  const [colorMenu, setColorMenu] = useState<ColorMenuState | null>(null);
 
   useEffect(() => {
     documentRef.current = document;
@@ -50,7 +77,7 @@ export function MindElixirEditor({
 
   useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
-    markSelectedNode(canvasRef.current, selectedNodeId);
+    markSelectedNode(canvasRef.current, selectedNodeId, documentRef.current);
   }, [selectedNodeId]);
 
   useEffect(() => {
@@ -63,7 +90,7 @@ export function MindElixirEditor({
       direction: MindElixir.RIGHT,
       editable: true,
       keypress: true,
-      contextMenu: true,
+      contextMenu: false,
       toolBar: true,
       mouseSelectionButton: 0,
       newTopicName: "New idea",
@@ -89,7 +116,7 @@ export function MindElixirEditor({
     });
 
     mind.init(toMindElixirData(documentRef.current));
-    markSelectedNode(canvas, selectedNodeIdRef.current);
+    markSelectedNode(canvas, selectedNodeIdRef.current, documentRef.current);
     mind.bus.addListener("operation", () => {
       if (internalUpdateRef.current) return;
       onDocumentChange(fromMindElixirData(mind.getData(), documentRef.current));
@@ -107,13 +134,15 @@ export function MindElixirEditor({
           : mind.currentNode ?? mind.findEle(selectedNodeIdRef.current);
       if (!topic) return;
       mind.selectNode(topic as Parameters<typeof mind.selectNode>[0]);
-      const nodeObj = (topic as unknown as { nodeObj?: { id?: string; topic?: string } }).nodeObj;
-      if (!nodeObj?.id) return;
+      const nodeId = getTopicNodeId(topic, documentRef.current);
+      if (!nodeId) return;
+      const nodeObj = (topic as unknown as { nodeObj?: { topic?: string } }).nodeObj;
+      const title = nodeObj?.topic ?? topic.textContent ?? "";
       const hostRect = host.getBoundingClientRect();
       const topicRect = topic.getBoundingClientRect();
       setInlineEdit({
-        id: nodeObj.id,
-        value: nodeObj.topic ?? topic.textContent ?? "",
+        id: nodeId,
+        value: title,
         left: topicRect.left - hostRect.left,
         top: topicRect.top - hostRect.top,
         width: Math.max(topicRect.width, 130),
@@ -121,10 +150,44 @@ export function MindElixirEditor({
       });
     };
     const handleDoubleClick = (event: MouseEvent) => beginInlineEdit(event.target);
+    const handleClick = (event: MouseEvent) => {
+      const topic = event.target instanceof HTMLElement ? event.target.closest("me-tpc") : null;
+      if (!topic) return;
+      mind.selectNode(topic as Parameters<typeof mind.selectNode>[0]);
+      const nodeId = getTopicNodeId(topic, documentRef.current);
+      if (!nodeId) return;
+      onSelectedNodeChange(nodeId);
+      markSelectedNode(canvas, nodeId, documentRef.current);
+    };
+    const handleContextMenu = (event: MouseEvent) => {
+      const topic = event.target instanceof HTMLElement ? event.target.closest("me-tpc") : null;
+      if (!topic) return;
+      event.preventDefault();
+      event.stopPropagation();
+      mind.selectNode(topic as Parameters<typeof mind.selectNode>[0]);
+      const nodeId = getTopicNodeId(topic, documentRef.current);
+      if (!nodeId) return;
+      onSelectedNodeChange(nodeId);
+      const hostRect = host.getBoundingClientRect();
+      setColorMenu({
+        id: nodeId,
+        left: event.clientX - hostRect.left,
+        top: event.clientY - hostRect.top,
+      });
+    };
+    const closeColorMenu = () => setColorMenu(null);
+    canvas.addEventListener("click", handleClick, true);
     canvas.addEventListener("dblclick", handleDoubleClick, true);
+    canvas.addEventListener("contextmenu", handleContextMenu, true);
+    window.addEventListener("click", closeColorMenu);
+    window.addEventListener("keydown", closeColorMenu);
 
     return () => {
+      canvas.removeEventListener("click", handleClick, true);
       canvas.removeEventListener("dblclick", handleDoubleClick, true);
+      canvas.removeEventListener("contextmenu", handleContextMenu, true);
+      window.removeEventListener("click", closeColorMenu);
+      window.removeEventListener("keydown", closeColorMenu);
       mind.destroy();
       instanceRef.current = null;
     };
@@ -138,7 +201,7 @@ export function MindElixirEditor({
     mind.clearHistory?.();
     window.setTimeout(() => {
       internalUpdateRef.current = false;
-      markSelectedNode(canvasRef.current, selectedNodeIdRef.current);
+      markSelectedNode(canvasRef.current, selectedNodeIdRef.current, documentRef.current);
     }, 0);
   }, [document]);
 
@@ -149,13 +212,14 @@ export function MindElixirEditor({
     if (!mind || !host) return;
     const topic = mind.findEle(selectedNodeIdRef.current);
     if (!topic) return;
-    const nodeObj = (topic as unknown as { nodeObj?: { id?: string; topic?: string } }).nodeObj;
-    if (!nodeObj?.id) return;
+    const nodeId = getTopicNodeId(topic, documentRef.current);
+    if (!nodeId) return;
+    const nodeObj = (topic as unknown as { nodeObj?: { topic?: string } }).nodeObj;
     const hostRect = host.getBoundingClientRect();
     const topicRect = topic.getBoundingClientRect();
     setInlineEdit({
-      id: nodeObj.id,
-      value: nodeObj.topic ?? topic.textContent ?? "",
+      id: nodeId,
+      value: nodeObj?.topic ?? topic.textContent ?? "",
       left: topicRect.left - hostRect.left,
       top: topicRect.top - hostRect.top,
       width: Math.max(topicRect.width, 130),
@@ -181,12 +245,56 @@ export function MindElixirEditor({
     if (!title) return;
     onDocumentChange(updateNode(documentRef.current, inlineEdit.id, { title }));
     onSelectedNodeChange(inlineEdit.id);
-    window.setTimeout(() => markSelectedNode(canvasRef.current, inlineEdit.id), 0);
+    window.setTimeout(() => markSelectedNode(canvasRef.current, inlineEdit.id, documentRef.current), 0);
+  };
+
+  const chooseColor = (color: string) => {
+    if (!colorMenu) return;
+    onDocumentChange(updateNode(documentRef.current, colorMenu.id, { visual: { color } }));
+    onSelectedNodeChange(colorMenu.id);
+    setColorMenu(null);
+    window.setTimeout(() => markSelectedNode(canvasRef.current, colorMenu.id, documentRef.current), 0);
+  };
+
+  const moveToRoot = () => {
+    if (!colorMenu || colorMenu.id === documentRef.current.root.id) return;
+    onDocumentChange(moveNode(documentRef.current, colorMenu.id, documentRef.current.root.id));
+    onSelectedNodeChange(colorMenu.id);
+    setColorMenu(null);
+    window.setTimeout(() => markSelectedNode(canvasRef.current, colorMenu.id, documentRef.current), 0);
   };
 
   return (
     <div ref={hostRef} className="mind-elixir-host" aria-label="Mind tree editor">
       <div ref={canvasRef} className="mind-elixir-canvas" />
+      {colorMenu ? (
+        <div
+          className="node-color-menu"
+          role="menu"
+          aria-label="Node color"
+          style={{
+            left: colorMenu.left,
+            top: colorMenu.top,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" className="node-menu-action" disabled={colorMenu.id === document.root.id} onClick={moveToRoot}>
+            Move to root
+          </button>
+          {nodeColors.map((color) => (
+            <button
+              key={color}
+              type="button"
+              role="menuitem"
+              className="node-color-swatch"
+              style={{ backgroundColor: color }}
+              aria-label={`Set node color ${color}`}
+              title={color}
+              onClick={() => chooseColor(color)}
+            />
+          ))}
+        </div>
+      ) : null}
       {inlineEdit ? (
         <input
           ref={inlineInputRef}

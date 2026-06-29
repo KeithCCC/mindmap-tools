@@ -98,13 +98,13 @@ describe("MindElixirEditor", () => {
     const { onDocumentChange, onSelectedNodeChange } = renderEditor(document, 0);
 
     fireEvent.contextMenu(topicElement, { clientX: 40, clientY: 50 });
-    await user.click(screen.getByRole("menuitem", { name: "Set node color #dcfce7" }));
+    await user.click(screen.getByRole("menuitem", { name: "Set node color #86efac" }));
 
     expect(onSelectedNodeChange).toHaveBeenCalledWith("root");
     expect(onDocumentChange).toHaveBeenCalledWith(
       expect.objectContaining({
         root: expect.objectContaining({
-          visual: { color: "#dcfce7" },
+          visual: { color: "#86efac" },
         }),
       }),
     );
@@ -165,14 +165,14 @@ describe("MindElixirEditor", () => {
     expect(nextDocument.root.children[0].children).toHaveLength(0);
   });
 
-  it("shows edit properties in the context menu when enabled", async () => {
+  it("shows edit notes in the context menu when enabled", async () => {
     const user = userEvent.setup();
     const document = createMindmapDocument("Brainstorm");
     document.root.id = "root";
     const { onEditNodeNotes, onSelectedNodeChange } = renderEditor(document, 0, true);
 
     fireEvent.contextMenu(topicElement, { clientX: 40, clientY: 50 });
-    await user.click(screen.getByRole("menuitem", { name: "Edit properties" }));
+    await user.click(screen.getByRole("menuitem", { name: "Edit Notes" }));
 
     expect(onSelectedNodeChange).toHaveBeenCalledWith("root");
     expect(onEditNodeNotes).toHaveBeenCalledWith("root");

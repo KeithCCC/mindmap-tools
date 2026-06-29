@@ -20,7 +20,7 @@ type ColorMenuState = {
 
 type MindmapPanEvent = CustomEvent<{ dx: number; dy: number }>;
 
-const nodeColors = ["#ffffff", "#e7f0ff", "#dcfce7", "#fef3c7", "#fee2e2", "#ede9fe", "#cffafe", "#fce7f3"];
+const nodeColors = ["#ffffff", "#bfdbfe", "#86efac", "#fde047", "#fca5a5", "#d8b4fe", "#67e8f9", "#fdba74"];
 type EditorTheme = "light" | "dark";
 
 function getMindElixirTheme(theme: EditorTheme) {
@@ -354,7 +354,7 @@ export function MindElixirEditor({
         >
           {showNoteEditorInContextMenu ? (
             <button type="button" role="menuitem" className="node-menu-action" onClick={editNotes}>
-              Edit properties
+              Edit Notes
             </button>
           ) : null}
           <button type="button" role="menuitem" className="node-menu-action" disabled={colorMenu.id === document.root.id} onClick={moveToRoot}>

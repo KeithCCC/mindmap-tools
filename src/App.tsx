@@ -25,6 +25,7 @@ import { MindElixirEditor } from "./components/MindElixirEditor";
 
 const storageKey = "mindmap-tools.document";
 const themeStorageKey = "mindmap-tools.theme";
+const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__}`;
 
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
@@ -694,7 +695,7 @@ export default function App() {
     <main className={`app-shell theme-${theme}`}>
       <header className="app-header">
         <div>
-          <p className="label">Mindmap Tools</p>
+          <p className="label">{appDisplayName}</p>
           <h1>{document.root.title}</h1>
         </div>
         <div className="header-actions">

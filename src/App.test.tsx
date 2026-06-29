@@ -25,7 +25,7 @@ vi.mock("./components/MindElixirEditor", () => ({
         Mock Mind Elixir editor
         {showNoteEditorInContextMenu ? (
           <button type="button" onClick={() => onEditNodeNotes?.(selectedNodeId)}>
-            Mock edit properties
+            Mock Edit Notes
           </button>
         ) : null}
       </div>
@@ -75,6 +75,7 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByTestId("mind-elixir-editor")).toBeInTheDocument();
+    expect(screen.getByText("Futaba (Mindmap) 0.1.0")).toBeInTheDocument();
   });
 
   it("exposes Excalidraw export from the header", () => {
@@ -522,8 +523,8 @@ describe("App", () => {
     await user.type(notesInput, "Existing note");
     await user.click(screen.getByRole("button", { name: "Hide properties" }));
 
-    expect(screen.queryByRole("button", { name: "Mock edit properties" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Mock edit properties" }));
+    expect(screen.queryByRole("button", { name: "Mock Edit Notes" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mock Edit Notes" }));
 
     const popup = screen.getByRole("dialog", { name: "Edit notes for Brainstorm" });
     expect(popup).toBeInTheDocument();

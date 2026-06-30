@@ -20,6 +20,7 @@ import {
 } from "./domain/mindmap";
 import { parseExcalidrawMindmap, serializeExcalidrawMindmap } from "./converters/excalidraw";
 import { parseMermaidMindmap, serializeMermaidMindmap } from "./converters/mermaid";
+import { generateOutlineMarkdownReport } from "./converters/outlineReport";
 import { generateWikiMarkdown, WikiFile } from "./converters/wiki";
 import { MindElixirEditor } from "./components/MindElixirEditor";
 
@@ -218,10 +219,10 @@ function TreeNode({
         {canDrag ? (
           <div className="node-order-controls" aria-label={`Order ${node.title}`}>
             <button type="button" disabled={!canMoveUp} onClick={() => onMoveNode(node.id, "up")} aria-label={`Move ${node.title} up`}>
-              Up
+              ↑
             </button>
             <button type="button" disabled={!canMoveDown} onClick={() => onMoveNode(node.id, "down")} aria-label={`Move ${node.title} down`}>
-              Down
+              ↓
             </button>
           </div>
         ) : null}
@@ -322,6 +323,7 @@ export default function App() {
   const dataOutput = useMemo(() => JSON.stringify(document, null, 2), [document]);
   const excalidrawOutput = useMemo(() => JSON.stringify(serializeExcalidrawMindmap(document), null, 2), [document]);
   const wikiFiles = useMemo(() => generateWikiMarkdown(document), [document]);
+  const outlineMarkdownReport = useMemo(() => generateOutlineMarkdownReport(document), [document]);
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(document));
@@ -786,6 +788,9 @@ export default function App() {
                     </button>
                     <button type="button" onClick={() => setCollapsedOutlineIds(new Set())}>
                       Expand all
+                    </button>
+                    <button type="button" onClick={() => downloadBlob(`${slugifyFileName(document.title)}-outline-report.md`, new Blob([outlineMarkdownReport], { type: "text/markdown" }))}>
+                      Export Markdown Report
                     </button>
                     <button type="button" onClick={() => setIsOutlineOpen(false)}>
                       Close

@@ -474,6 +474,36 @@ describe("App", () => {
     expect(screen.getByLabelText("Selected node title")).toHaveValue("FMI");
   });
 
+  it("downloads a markdown outline report with notes", async () => {
+    const user = userEvent.setup();
+    const createObjectUrl = vi.fn((_: Blob) => "blob:outline-report");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    render(<App />);
+
+    const notesInput = screen.getByLabelText("Notes");
+    await user.type(notesInput, "Root note");
+    await user.click(screen.getByRole("button", { name: "Add child" }));
+    const titleInput = screen.getByLabelText("Selected node title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Report child");
+    await user.clear(notesInput);
+    await user.type(notesInput, "Child note");
+    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Export Markdown Report" }));
+
+    expect(click).toHaveBeenCalledTimes(1);
+    const blob = createObjectUrl.mock.calls[0]?.[0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe("text/markdown");
+    const report = await blobText(blob);
+    expect(report).toContain("# Brainstorm Outline Report");
+    expect(report).toContain("Notes: Root note");
+    expect(report).toContain("- Report child");
+    expect(report).toContain("Notes: Child note");
+  });
+
   it("opens the semantic outline as a floating dialog", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -484,6 +514,7 @@ describe("App", () => {
     expect(screen.getByText("Use Up/Down to sort siblings. Drag onto the top or bottom of a node to sort, or drop in the middle to move under that node.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collapse all" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Expand all" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export Markdown Report" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog", { name: "Semantic outline" })).not.toBeInTheDocument();
   });

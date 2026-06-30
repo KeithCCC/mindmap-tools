@@ -75,7 +75,8 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByTestId("mind-elixir-editor")).toBeInTheDocument();
-    expect(screen.getByText("Futaba (Mindmap) 0.1.0")).toBeInTheDocument();
+    expect(screen.getByText(/^Futaba \(Mindmap\) 0\.1\.0 · Built \d{4}-\d{2}-\d{2}T/)).toBeInTheDocument();
+    expect(window.document.title).toMatch(/^Futaba \(Mindmap\) 0\.1\.0 · Built \d{4}-\d{2}-\d{2}T/);
   });
 
   it("exposes Excalidraw export from the header", () => {

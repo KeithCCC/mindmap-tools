@@ -26,7 +26,7 @@ import { MindElixirEditor } from "./components/MindElixirEditor";
 
 const storageKey = "mindmap-tools.document";
 const themeStorageKey = "mindmap-tools.theme";
-const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__}`;
+const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__} · Built ${__BUILD_TIMESTAMP__}`;
 
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
@@ -332,6 +332,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.document.title = appDisplayName;
+  }, []);
 
   useEffect(() => {
     if (!findNode(document.root, selectedId)) setSelectedId(document.root.id);

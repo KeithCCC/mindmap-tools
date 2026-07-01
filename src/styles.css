@@ -111,21 +111,58 @@ h2 {
 
 .header-actions,
 .button-grid {
+  align-items: center;
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 8px;
-  min-height: 0;
-  width: 100%;
+.file-menu-wrap {
+  position: relative;
 }
 
-.workspace.inspector-collapsed {
+.file-menu {
+  background: #ffffff;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(48, 70, 105, 0.2);
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 80;
+}
+
+.theme-dark .file-menu {
+  background: #111827;
+  border-color: #334155;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+
+.file-menu button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.build-meta {
+  color: #637189;
+  font-size: 0.76rem;
+  margin: 2px 4px 6px;
+}
+
+.theme-dark .build-meta {
+  color: #94a3b8;
+}
+
+.workspace {
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  position: relative;
+  width: 100%;
 }
 
 .canvas-panel,
@@ -545,8 +582,14 @@ h2 {
 }
 
 .side-panel {
+  bottom: 8px;
   min-height: 0;
   overflow: hidden;
+  position: fixed;
+  right: 8px;
+  top: 64px;
+  width: min(360px, calc(100vw - 16px));
+  z-index: 55;
 }
 
 .side-panel[hidden] {
@@ -556,7 +599,7 @@ h2 {
 .tabs {
   border-bottom: 1px solid #e6ecf5;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .theme-dark .tabs {
@@ -730,5 +773,13 @@ pre {
 
   .mind-elixir-host {
     height: 560px;
+  }
+
+  .side-panel {
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    top: 72px;
+    width: auto;
   }
 }

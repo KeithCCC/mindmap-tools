@@ -63,6 +63,15 @@ function getRootChildTitles() {
   return Array.from(document.querySelectorAll(".tree > li > ul > li > .tree-node-row > button.node")).map((element) => element.textContent);
 }
 
+async function openProperties(user: ReturnType<typeof userEvent.setup>) {
+  const button = screen.queryByRole("button", { name: "Properties" });
+  if (button) await user.click(button);
+}
+
+async function openFileMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "File" }));
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -75,17 +84,21 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByTestId("mind-elixir-editor")).toBeInTheDocument();
-    expect(screen.getByText(/^Futaba \(Mindmap\) 0\.1\.0 · Built \d{4}-\d{2}-\d{2}T/)).toBeInTheDocument();
-    expect(window.document.title).toMatch(/^Futaba \(Mindmap\) 0\.1\.0 · Built \d{4}-\d{2}-\d{2}T/);
+    expect(screen.getByText("Futaba (Mindmap) 0.1.0")).toBeInTheDocument();
+    expect(window.document.title).toMatch(/^Futaba \(Mindmap\) 0\.1\.0 - Built \d{4}-\d{2}-\d{2}T/);
   });
 
-  it("exposes Excalidraw export from the header", () => {
+  it("exposes Excalidraw export from the File menu", async () => {
+    const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "Export Excalidraw" })).toBeInTheDocument();
+    await openFileMenu(user);
+
+    expect(screen.getByRole("menu", { name: "File actions" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Export Excalidraw" })).toBeInTheDocument();
   });
 
-  it("downloads Excalidraw export data from the header", async () => {
+  it("downloads Excalidraw export data from the File menu", async () => {
     const user = userEvent.setup();
     const createObjectUrl = vi.fn((_: Blob) => "blob:mindmap");
     const revokeObjectUrl = vi.fn();
@@ -95,7 +108,8 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Export Excalidraw" }));
+    await openFileMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Export Excalidraw" }));
 
     expect(click).toHaveBeenCalledTimes(1);
     expect(createObjectUrl).toHaveBeenCalledTimes(1);
@@ -119,7 +133,8 @@ describe("App", () => {
 
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Download JSON" }));
+    await openFileMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Download JSON" }));
 
     const blob = createObjectUrl.mock.calls[0]?.[0];
     expect(blob).toBeInstanceOf(Blob);
@@ -134,6 +149,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     const mapNameInput = screen.getByLabelText("Map file name");
     const nodeTitleInput = screen.getByLabelText("Selected node title");
     await user.clear(mapNameInput);
@@ -171,6 +187,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Persisted Map");
@@ -219,6 +236,7 @@ describe("App", () => {
     render(<App />);
 
     const initialCallback = latestEditorDocumentChange;
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
 
     expect(latestEditorDocumentChange).toBe(initialCallback);
@@ -227,11 +245,13 @@ describe("App", () => {
   it("resets current editing data", async () => {
     const user = userEvent.setup();
     render(<App />);
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Temporary Map");
 
-    await user.click(screen.getByRole("button", { name: "Reset Data" }));
+    await openFileMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Reset Data" }));
 
     expect(screen.getByRole("heading", { name: "Brainstorm" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected node title")).toHaveValue("Brainstorm");
@@ -242,11 +262,12 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.queryByRole("button", { name: "New idea" })).not.toBeInTheDocument();
   });
 
@@ -261,7 +282,7 @@ describe("App", () => {
     await user.keyboard("{Control>}{z}{/Control}");
 
     expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(addedNodeId);
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.queryByRole("button", { name: "New idea" })).not.toBeInTheDocument();
   });
 
@@ -269,11 +290,14 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Parent idea");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "Nested idea");
@@ -287,27 +311,31 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "A");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "B");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "C");
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     await user.click(screen.getByRole("button", { name: "B" }));
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "Delete node" }));
     await user.click(screen.getByRole("button", { name: "Delete only this node" }));
 
     expect(screen.queryByRole("button", { name: "B" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.getByRole("button", { name: "C" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected node title")).toHaveValue("A");
   });
@@ -316,20 +344,24 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "A");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "B");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "C");
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     await user.click(screen.getByRole("button", { name: "B" }));
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "Delete node" }));
@@ -337,7 +369,7 @@ describe("App", () => {
     expect(screen.getByRole("dialog", { name: "Delete B" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete node and children" }));
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.queryByRole("button", { name: "B" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "C" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Selected node title")).toHaveValue("A");
@@ -347,7 +379,9 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Keyboard target");
@@ -364,7 +398,9 @@ describe("App", () => {
     render(<App />);
 
     for (const title of ["A", "B", "C"]) {
+      await openProperties(user);
       await user.click(screen.getByRole("button", { name: "Add child" }));
+      await openProperties(user);
       const titleInput = screen.getByLabelText("Selected node title");
       await user.clear(titleInput);
       await user.type(titleInput, title);
@@ -372,7 +408,7 @@ describe("App", () => {
       await user.keyboard("{ArrowLeft}");
     }
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     const cButton = screen.getByRole("button", { name: "C" });
     const aButton = screen.getByRole("button", { name: "A" });
     vi.spyOn(aButton, "getBoundingClientRect").mockReturnValue({
@@ -401,15 +437,18 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Personal");
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "FMI");
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     const fmiButton = screen.getByRole("button", { name: "FMI" });
     const rootButton = screen.getByRole("button", { name: "Brainstorm" });
     vi.spyOn(rootButton, "getBoundingClientRect").mockReturnValue({
@@ -438,17 +477,20 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Personal");
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "FMI");
 
     await user.click(screen.getByRole("button", { name: "Move to root" }));
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     const rootChildTitles = getRootChildTitles();
     expect(rootChildTitles).toEqual(["Personal", "FMI"]);
     expect(screen.getByLabelText("Selected node title")).toHaveValue("FMI");
@@ -458,17 +500,20 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Personal");
     await user.click(screen.getByTestId("mind-elixir-editor"));
     await user.keyboard("{ArrowLeft}");
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "FMI");
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     await user.click(screen.getByRole("button", { name: "Move FMI up" }));
 
     expect(getRootChildTitles()).toEqual(["FMI", "Personal"]);
@@ -483,15 +528,18 @@ describe("App", () => {
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
     render(<App />);
 
+    await openProperties(user);
     const notesInput = screen.getByLabelText("Notes");
     await user.type(notesInput, "Root note");
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Report child");
     await user.clear(notesInput);
     await user.type(notesInput, "Child note");
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     await user.click(screen.getByRole("button", { name: "Export Markdown Report" }));
 
     expect(click).toHaveBeenCalledTimes(1);
@@ -509,7 +557,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
 
     expect(screen.getByRole("dialog", { name: "Semantic outline" })).toBeInTheDocument();
     expect(screen.getByText("Use Up/Down to sort siblings. Drag onto the top or bottom of a node to sort, or drop in the middle to move under that node.")).toBeInTheDocument();
@@ -524,14 +572,17 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Parent");
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "Child");
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
 
     expect(screen.getByRole("button", { name: "Child" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse all" }));
@@ -551,6 +602,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     const notesInput = screen.getByLabelText("Notes");
     await user.type(notesInput, "Existing note");
     await user.click(screen.getByRole("button", { name: "Hide properties" }));
@@ -576,12 +628,14 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: /add child/i }));
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
     await user.clear(titleInput);
     await user.type(titleInput, "Market research");
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.getByRole("button", { name: "Market research" })).toBeInTheDocument();
   });
 
@@ -618,12 +672,14 @@ describe("App", () => {
     render(<App />);
     const editor = screen.getByTestId("mind-elixir-editor");
     const initialSelectedId = editor.dataset.selectedNodeId;
+    await openProperties(user);
     const titleInput = screen.getByLabelText("Selected node title");
 
+    await openProperties(user);
     await user.click(screen.getByRole("button", { name: "Add child" }));
     await user.clear(titleInput);
     await user.type(titleInput, "Target node");
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     await user.click(screen.getByRole("button", { name: "Target node" }));
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.keyboard("{Control>}{Enter}{/Control}");
@@ -632,7 +688,7 @@ describe("App", () => {
       expect(screen.getByTestId("mind-elixir-editor")).toHaveAttribute("data-inline-edit-request", "2");
     });
     expect(screen.getByTestId("mind-elixir-editor").dataset.selectedNodeId).not.toBe(initialSelectedId);
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.getByRole("button", { name: "Target node" })).toBeInTheDocument();
     expect(screen.getByLabelText("Selected node title")).toHaveValue("New idea");
   });
@@ -641,11 +697,12 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openProperties(user);
     await user.click(screen.getByRole("tab", { name: "Import" }));
     await user.type(screen.getByLabelText("Mermaid mindmap input"), "mindmap\n  Plan\n    UX\n    Data");
     await user.click(screen.getByRole("button", { name: /import mermaid/i }));
 
-    await user.click(screen.getByRole("button", { name: "Open outline" }));
+    await user.click(screen.getByRole("button", { name: "Outline" }));
     expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "UX" })).toBeInTheDocument();
   });

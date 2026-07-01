@@ -26,7 +26,8 @@ import { MindElixirEditor } from "./components/MindElixirEditor";
 
 const storageKey = "mindmap-tools.document";
 const themeStorageKey = "mindmap-tools.theme";
-const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__} · Built ${__BUILD_TIMESTAMP__}`;
+const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__}`;
+const buildDisplayText = `Built ${__BUILD_TIMESTAMP__}`;
 
 type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
@@ -219,10 +220,10 @@ function TreeNode({
         {canDrag ? (
           <div className="node-order-controls" aria-label={`Order ${node.title}`}>
             <button type="button" disabled={!canMoveUp} onClick={() => onMoveNode(node.id, "up")} aria-label={`Move ${node.title} up`}>
-              ↑
+              {"\u2191"}
             </button>
             <button type="button" disabled={!canMoveDown} onClick={() => onMoveNode(node.id, "down")} aria-label={`Move ${node.title} down`}>
-              ↓
+              {"\u2193"}
             </button>
           </div>
         ) : null}
@@ -270,7 +271,8 @@ export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">(() => loadTheme());
   const [selectedId, setSelectedId] = useState(document.root.id);
   const [activeTab, setActiveTab] = useState<Tab>("edit");
-  const [isInspectorOpen, setIsInspectorOpen] = useState(true);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const [noteEditorNodeId, setNoteEditorNodeId] = useState<string | null>(null);
   const [deletePromptNodeId, setDeletePromptNodeId] = useState<string | null>(null);
   const [inlineEditRequest, setInlineEditRequest] = useState(0);
@@ -334,8 +336,25 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.document.title = appDisplayName;
+    window.document.title = `${appDisplayName} - ${buildDisplayText}`;
   }, []);
+
+  useEffect(() => {
+    if (!isFileMenuOpen) return;
+    const closeOnOutsidePointer = (event: MouseEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest(".file-menu-wrap")) return;
+      setIsFileMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFileMenuOpen(false);
+    };
+    window.addEventListener("mousedown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isFileMenuOpen]);
 
   useEffect(() => {
     if (!findNode(document.root, selectedId)) setSelectedId(document.root.id);
@@ -682,6 +701,8 @@ export default function App() {
     setActiveTab("edit");
   };
 
+  const closeFileMenu = () => setIsFileMenuOpen(false);
+
   const allNodes = flattenNodes(document.root);
 
   const toggleOutlineCollapse = (id: string) => {
@@ -705,14 +726,54 @@ export default function App() {
           <h1>{document.root.title}</h1>
         </div>
         <div className="header-actions">
-          <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? "Light theme" : "Dark theme"}
-          </button>
           <button type="button" disabled={undoStack.length === 0} onClick={undoLastChange}>
             Undo
           </button>
-          <button type="button" onClick={downloadJson}>
-            Download JSON
+          <button type="button" onClick={() => setIsOutlineOpen(true)}>
+            Outline
+          </button>
+          <button
+            type="button"
+            aria-expanded={isInspectorOpen}
+            aria-controls="property-inspector"
+            onClick={() => setIsInspectorOpen((open) => !open)}
+          >
+            {isInspectorOpen ? "Hide properties" : "Properties"}
+          </button>
+          <div className="file-menu-wrap">
+            <button type="button" aria-expanded={isFileMenuOpen} aria-haspopup="menu" onClick={() => setIsFileMenuOpen((open) => !open)}>
+              File
+            </button>
+            {isFileMenuOpen ? (
+              <div className="file-menu" role="menu" aria-label="File actions">
+                <p className="build-meta">{buildDisplayText}</p>
+                <button type="button" role="menuitem" onClick={() => { closeFileMenu(); downloadJson(); }}>
+                  Download JSON
+                </button>
+                <button type="button" role="menuitem" onClick={() => { closeFileMenu(); dataFileInputRef.current?.click(); }}>
+                  Load JSON
+                </button>
+                <button type="button" role="menuitem" onClick={() => { closeFileMenu(); resetData(); }}>
+                  Reset Data
+                </button>
+                <button type="button" role="menuitem" onClick={() => { closeFileMenu(); downloadBlob("mindmap.mmd", new Blob([mermaidOutput], { type: "text/plain" })); }}>
+                  Export Mermaid
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { closeFileMenu(); downloadBlob("mindmap.excalidraw", new Blob([excalidrawOutput], { type: "application/json" })); }}
+                >
+                  Export Excalidraw
+                </button>
+                <button type="button" role="menuitem" onClick={() => { closeFileMenu(); downloadBlob("llm-wiki.zip", createWikiZip(wikiFiles)); }}>
+                  Export Wiki
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
+            {theme === "dark" ? "Light theme" : "Dark theme"}
           </button>
           <input
             ref={dataFileInputRef}
@@ -726,45 +787,15 @@ export default function App() {
               event.currentTarget.value = "";
             }}
           />
-          <button type="button" onClick={() => dataFileInputRef.current?.click()}>
-            Load JSON
-          </button>
-          <button type="button" onClick={resetData}>
-            Reset Data
-          </button>
-          <button type="button" onClick={() => downloadBlob("mindmap.mmd", new Blob([mermaidOutput], { type: "text/plain" }))}>
-            Export Mermaid
-          </button>
-          <button
-            type="button"
-            onClick={() => downloadBlob("mindmap.excalidraw", new Blob([excalidrawOutput], { type: "application/json" }))}
-          >
-            Export Excalidraw
-          </button>
-          <button type="button" onClick={() => downloadBlob("llm-wiki.zip", createWikiZip(wikiFiles))}>
-            Export Wiki
-          </button>
         </div>
       </header>
 
-      <section className={isInspectorOpen ? "workspace" : "workspace inspector-collapsed"}>
+      <section className="workspace">
         <div className="canvas-panel">
           <div className="panel-heading">
             <h2>Brainstorm editor</h2>
             <div className="panel-actions">
               <span>{allNodes.length} nodes</span>
-              <button type="button" className="inspector-toggle" onClick={() => setIsOutlineOpen(true)}>
-                Open outline
-              </button>
-              <button
-                type="button"
-                className="inspector-toggle"
-                aria-expanded={isInspectorOpen}
-                aria-controls="property-inspector"
-                onClick={() => setIsInspectorOpen((open) => !open)}
-              >
-                {isInspectorOpen ? "Hide properties" : "Show properties"}
-              </button>
             </div>
           </div>
           <MindElixirEditor

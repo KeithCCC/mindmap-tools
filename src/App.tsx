@@ -23,13 +23,15 @@ import { parseMermaidMindmap, serializeMermaidMindmap } from "./converters/merma
 import { generateOutlineMarkdownReport } from "./converters/outlineReport";
 import { generateWikiMarkdown, WikiFile } from "./converters/wiki";
 import { MindElixirEditor } from "./components/MindElixirEditor";
+import type { GenerateMindmapResponse } from "../shared/aiMindmap";
+import { replaceWithGeneratedMindmap } from "./ai/mindmapGeneration";
 
 const storageKey = "mindmap-tools.document";
 const themeStorageKey = "mindmap-tools.theme";
 const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__}`;
 const buildDisplayText = `Built ${__BUILD_TIMESTAMP__}`;
 
-type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
+type Tab = "edit" | "ai" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
 type OutlineDropTarget = { id: string; position: DropPosition } | null;
 type MindmapPanDirection = "up" | "down" | "left" | "right";
@@ -281,6 +283,10 @@ export default function App() {
   const [cloudMindmaps, setCloudMindmaps] = useState<CloudMindmapSummary[]>([]);
   const [cloudStatus, setCloudStatus] = useState("Cloud storage not checked yet.");
   const [isCloudLoading, setIsCloudLoading] = useState(false);
+  const [aiTheme, setAiTheme] = useState("");
+  const [aiInstructions, setAiInstructions] = useState("");
+  const [aiStatus, setAiStatus] = useState("Enter a theme to generate a new mindmap.");
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [localFileStatus, setLocalFileStatus] = useState("Local JSON export is ready.");
   const [outlineDropTarget, setOutlineDropTarget] = useState<OutlineDropTarget>(null);
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
@@ -701,6 +707,34 @@ export default function App() {
     setActiveTab("edit");
   };
 
+  const generateAiMindmap = async () => {
+    const themeInput = aiTheme.trim();
+    if (!themeInput) {
+      setAiStatus("Theme is required.");
+      return;
+    }
+    if (isAiGenerating) return;
+    setIsAiGenerating(true);
+    setAiStatus("Generating mindmap...");
+    try {
+      const instructions = aiInstructions.trim();
+      const payload = await readApiJson<GenerateMindmapResponse>(
+        await fetch("/api/ai/generate-mindmap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(instructions ? { theme: themeInput, instructions } : { theme: themeInput }),
+        }),
+      );
+      const next = replaceWithGeneratedMindmap(documentStateRef.current, payload.mindmap);
+      commitDocument(next, next.root.id);
+      setAiStatus(`Generated "${next.title}".`);
+    } catch (error) {
+      setAiStatus(error instanceof Error ? error.message : "Mindmap generation failed.");
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
   const closeFileMenu = () => setIsFileMenuOpen(false);
 
   const allNodes = flattenNodes(document.root);
@@ -924,7 +958,7 @@ export default function App() {
 
         <aside id="property-inspector" className="side-panel" hidden={!isInspectorOpen}>
           <div className="tabs" role="tablist" aria-label="Mindmap tools">
-            {(["edit", "import", "export", "wiki"] as Tab[]).map((tab) => (
+            {(["edit", "ai", "import", "export", "wiki"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -933,7 +967,7 @@ export default function App() {
                 className={activeTab === tab ? "tab-active" : ""}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab[0].toUpperCase() + tab.slice(1)}
+                {tab === "ai" ? "AI" : tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
@@ -1004,6 +1038,36 @@ export default function App() {
                     ))}
                 </select>
               </label>
+            </section>
+          ) : null}
+
+          {activeTab === "ai" ? (
+            <section className="tool-section">
+              <label>
+                Theme
+                <input
+                  value={aiTheme}
+                  maxLength={200}
+                  disabled={isAiGenerating}
+                  onChange={(event) => setAiTheme(event.target.value)}
+                />
+              </label>
+              <label>
+                Additional instructions
+                <textarea
+                  value={aiInstructions}
+                  maxLength={2000}
+                  rows={7}
+                  disabled={isAiGenerating}
+                  onChange={(event) => setAiInstructions(event.target.value)}
+                />
+              </label>
+              <button type="button" disabled={isAiGenerating} onClick={() => void generateAiMindmap()}>
+                {isAiGenerating ? "Generating..." : "Generate mindmap"}
+              </button>
+              <p className="ai-status" role="status" aria-live="polite">
+                {aiStatus}
+              </p>
             </section>
           ) : null}
 

@@ -599,7 +599,7 @@ h2 {
 .tabs {
   border-bottom: 1px solid #e6ecf5;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
 }
 
 .theme-dark .tabs {
@@ -610,6 +610,8 @@ h2 {
   border: 0;
   border-radius: 0;
   color: #64748b;
+  min-width: 0;
+  padding: 0 6px;
 }
 
 .tabs .tab-active {
@@ -626,6 +628,18 @@ h2 {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.ai-status {
+  min-height: 2.75rem;
+  margin: 0;
+  color: #64748b;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.theme-dark .ai-status {
+  color: #94a3b8;
 }
 
 label {

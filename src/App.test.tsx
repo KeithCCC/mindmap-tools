@@ -706,4 +706,87 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "UX" })).toBeInTheDocument();
   });
+
+  it("generates a replacement mindmap and restores the previous map with Undo", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            mindmap: {
+              title: "Launch plan",
+              body: null,
+              children: [{ title: "Research", body: null, children: [] }],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    render(<App />);
+    await openProperties(user);
+    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await user.type(screen.getByLabelText("Theme"), "Launch plan");
+    await user.type(screen.getByLabelText("Additional instructions"), "Include research");
+    await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Launch plan" })).toBeInTheDocument());
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/ai/generate-mindmap",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ theme: "Launch plan", instructions: "Include research" }),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Outline" }));
+    expect(screen.getByRole("button", { name: "Research" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("heading", { name: "Brainstorm" })).toBeInTheDocument();
+  });
+
+  it("requires a theme before generating", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await openProperties(user);
+    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Theme is required.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("disables duplicate generation while a request is active", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    render(<App />);
+    await openProperties(user);
+    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await user.type(screen.getByLabelText("Theme"), "Plan");
+    await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
+    expect(screen.getByRole("button", { name: "Generating..." })).toBeDisabled();
+  });
+
+  it("keeps the current map when generation fails", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "OpenAI rate limit or quota was reached." }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    render(<App />);
+    await openProperties(user);
+    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await user.type(screen.getByLabelText("Theme"), "Plan");
+    await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("OpenAI rate limit or quota was reached."));
+    expect(screen.getByRole("heading", { name: "Brainstorm" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
 });

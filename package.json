@@ -17,6 +17,7 @@
     "express": "^5.2.1",
     "fflate": "^0.8.2",
     "mind-elixir": "^5.12.2",
+    "openai": "^6.48.0",
     "pg": "^8.22.0",
     "pg-protocol": "^1.15.0",
     "react": "^18.3.1",

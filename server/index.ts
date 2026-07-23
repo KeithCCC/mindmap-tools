@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { type Request, type Response } from "express";
 import { Pool } from "pg";
+import { createAiMindmapRouter } from "./aiMindmapRouter";
 
 type MindmapNode = {
   id: string;
@@ -27,6 +28,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const app = express();
 
 app.use(express.json({ limit: "5mb" }));
+app.use(createAiMindmapRouter());
 
 const pool = databaseUrl
   ? new Pool({

@@ -124,6 +124,23 @@ describe("OpenAI mindmap generation", () => {
     },
   );
 
+  it("maps a missing status to a sanitized 502 upstream error", async () => {
+    const gateway: MindmapModelGateway = {
+      generate: vi.fn().mockResolvedValue({
+        status: undefined,
+        outputText: JSON.stringify({ title: "Unsafe success", body: null, children: [] }),
+      }),
+    };
+
+    await expect(generateMindmap(input, gateway)).rejects.toEqual(
+      expect.objectContaining<Partial<AiMindmapError>>({
+        status: 502,
+        code: "openai_upstream_error",
+        message: "OpenAI request failed.",
+      }),
+    );
+  });
+
   it("rejects invalid JSON without exposing its content", async () => {
     const gateway: MindmapModelGateway = {
       generate: vi.fn().mockResolvedValue({ status: "completed", outputText: "not json" }),

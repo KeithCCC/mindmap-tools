@@ -8,7 +8,7 @@ import {
 } from "../shared/aiMindmap";
 
 export interface ModelGatewayResult {
-  status: string;
+  status?: string;
   outputText: string;
   refusal?: string;
 }
@@ -70,7 +70,7 @@ export class OpenAIMindmapGateway implements MindmapModelGateway {
         .flatMap((item) => item.content)
         .find((item) => item.type === "refusal");
       return {
-        status: response.status ?? "completed",
+        status: response.status ?? undefined,
         outputText: response.output_text,
         refusal: refusal?.type === "refusal" ? refusal.refusal : undefined,
       };

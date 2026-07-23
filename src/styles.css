@@ -790,10 +790,11 @@ pre {
   }
 
   .side-panel {
-    bottom: 8px;
+    bottom: 0;
     left: 8px;
+    position: absolute;
     right: 8px;
-    top: 72px;
+    top: 0;
     width: auto;
   }
 }

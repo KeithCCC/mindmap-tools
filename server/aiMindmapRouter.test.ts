@@ -42,6 +42,7 @@ describe("POST /api/ai/generate-mindmap", () => {
     const knownResponse = await request(createTestApp(known)).post("/api/ai/generate-mindmap").send({ theme: "Plan" });
     const unknownResponse = await request(createTestApp(unknown)).post("/api/ai/generate-mindmap").send({ theme: "Plan" });
 
+    expect(knownResponse.status).toBe(502);
     expect(knownResponse.body).toEqual({ error: "OpenAI request failed.", code: "openai_upstream_error" });
     expect(unknownResponse.status).toBe(500);
     expect(unknownResponse.body).toEqual({ error: "Mindmap generation failed.", code: "generation_failed" });

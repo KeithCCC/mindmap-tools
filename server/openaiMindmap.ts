@@ -17,6 +17,11 @@ export interface MindmapModelGateway {
   generate(input: GenerateMindmapInput): Promise<ModelGatewayResult>;
 }
 
+export const OPENAI_CLIENT_OPTIONS = {
+  maxRetries: 0,
+  timeout: 120_000,
+} as const;
+
 function buildInstructions(): string {
   return [
     "Generate a practical hierarchical mindmap.",
@@ -54,7 +59,7 @@ export class OpenAIMindmapGateway implements MindmapModelGateway {
 
   constructor(apiKey = process.env.OPENAI_API_KEY) {
     if (!apiKey) throw new AiMindmapError("OpenAI is not configured.", 503, "openai_not_configured");
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({ apiKey, ...OPENAI_CLIENT_OPTIONS });
   }
 
   async generate(input: GenerateMindmapInput): Promise<ModelGatewayResult> {
@@ -88,9 +93,13 @@ export async function generateMindmap(
 ): Promise<GeneratedMindmapNode> {
   const result = await gateway.generate(input);
   if (result.refusal) throw new AiMindmapError("The model declined this request.", 422, "model_refusal");
-  if (result.status !== "completed" || !result.outputText) {
+  if (result.status === "incomplete") {
     throw new AiMindmapError("The model response was incomplete.", 422, "incomplete_output");
   }
+  if (result.status !== "completed") {
+    throw new AiMindmapError("OpenAI request failed.", 502, "openai_upstream_error");
+  }
+  if (!result.outputText) throw new AiMindmapError("The model response was incomplete.", 422, "incomplete_output");
   let parsed: unknown;
   try {
     parsed = JSON.parse(result.outputText);

@@ -727,12 +727,24 @@ describe("App", () => {
 
     await openAiModal(user);
     await user.type(screen.getByLabelText("Theme"), "Launch plan");
+    await user.type(screen.getByLabelText("Additional instructions"), "Include research");
     await user.click(screen.getByRole("button", { name: "Close AI mindmap" }));
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
 
     await openAiModal(user);
     expect(screen.getByLabelText("Theme")).toHaveValue("Launch plan");
+    expect(screen.getByLabelText("Additional instructions")).toHaveValue("Include research");
     await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+  });
+
+  it("dismisses an idle AI modal when its backdrop is pressed", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const dialog = await openAiModal(user);
+    fireEvent.mouseDown(dialog.parentElement!);
+
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
   });
 

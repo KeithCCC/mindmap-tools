@@ -295,6 +295,10 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
   const noteEditorRef = useRef<HTMLTextAreaElement>(null);
+  const aiButtonRef = useRef<HTMLButtonElement>(null);
+  const aiDialogRef = useRef<HTMLElement>(null);
+  const aiThemeInputRef = useRef<HTMLInputElement>(null);
+  const wasAiModalOpenRef = useRef(false);
   const isSpacePanningRef = useRef(false);
   const documentStateRef = useRef(document);
   const selectedIdStateRef = useRef(selectedId);
@@ -350,7 +354,6 @@ export default function App() {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsFileMenuOpen(false);
-        if (!isAiGenerating) setIsAiModalOpen(false);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
@@ -366,7 +369,16 @@ export default function App() {
       window.removeEventListener("mousedown", closeOnOutsidePointer);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [isAiGenerating, isFileMenuOpen]);
+  }, [isFileMenuOpen]);
+
+  useEffect(() => {
+    if (isAiModalOpen) {
+      aiThemeInputRef.current?.focus();
+    } else if (wasAiModalOpenRef.current) {
+      aiButtonRef.current?.focus();
+    }
+    wasAiModalOpenRef.current = isAiModalOpen;
+  }, [isAiModalOpen]);
 
   useEffect(() => {
     if (!findNode(document.root, selectedId)) setSelectedId(document.root.id);
@@ -434,6 +446,38 @@ export default function App() {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isAiModalOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!isAiGenerating) setIsAiModalOpen(false);
+          return;
+        }
+        if (event.key === "Tab") {
+          event.stopPropagation();
+          const dialog = aiDialogRef.current;
+          const focusableElements = Array.from(
+            dialog?.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ) ?? [],
+          );
+          const first = focusableElements[0];
+          const last = focusableElements[focusableElements.length - 1];
+          const activeElement = window.document.activeElement;
+
+          if (!first || !last) {
+            event.preventDefault();
+            dialog?.focus();
+          } else if (event.shiftKey && (activeElement === first || !dialog?.contains(activeElement))) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && (activeElement === last || !dialog?.contains(activeElement))) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
       if (isFormField(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
@@ -519,7 +563,7 @@ export default function App() {
       window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", resetSpacePanning);
     };
-  }, [commitDocument, document, selectedId, undoLastChange]);
+  }, [commitDocument, document, isAiGenerating, isAiModalOpen, selectedId, undoLastChange]);
 
   const updateSelected = (updates: Partial<Pick<MindmapNode, "title" | "body">>) => {
     commitDocument((current) => updateNode(current, selectedNode.id, updates));
@@ -777,7 +821,7 @@ export default function App() {
           <button type="button" onClick={() => setIsOutlineOpen(true)}>
             Outline
           </button>
-          <button type="button" aria-haspopup="dialog" onClick={() => setIsAiModalOpen(true)}>
+          <button ref={aiButtonRef} type="button" aria-haspopup="dialog" onClick={() => setIsAiModalOpen(true)}>
             AI
           </button>
           <button
@@ -860,10 +904,12 @@ export default function App() {
           {isAiModalOpen ? (
             <div className="ai-dialog-backdrop" role="presentation" onMouseDown={closeAiModal}>
               <section
+                ref={aiDialogRef}
                 className="ai-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="ai-dialog-title"
+                tabIndex={-1}
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <div className="ai-dialog-header">
@@ -876,6 +922,7 @@ export default function App() {
                   <label>
                     Theme
                     <input
+                      ref={aiThemeInputRef}
                       value={aiTheme}
                       maxLength={200}
                       disabled={isAiGenerating}

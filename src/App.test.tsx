@@ -712,13 +712,45 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "UX" })).toBeInTheDocument();
   });
 
-  it("opens AI generation from the toolbar instead of Properties", async () => {
+  it("opens AI generation from the toolbar with Properties hidden or shown", async () => {
     const user = userEvent.setup();
     render(<App />);
 
+    const aiButton = screen.getByRole("button", { name: "AI" });
     expect(screen.queryByRole("tab", { name: "AI" })).not.toBeInTheDocument();
     await openAiModal(user);
-    expect(screen.getByLabelText("Theme")).toBeInTheDocument();
+    expect(screen.getByLabelText("Theme")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Close AI mindmap" }));
+    expect(aiButton).toHaveFocus();
+
+    await openProperties(user);
+    expect(screen.getByRole("button", { name: "Hide properties" })).toBeInTheDocument();
+    await openAiModal(user);
+    expect(screen.getByLabelText("Theme")).toHaveFocus();
+  });
+
+  it("traps focus in the AI modal without triggering map keyboard shortcuts", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const dialog = await openAiModal(user);
+    const closeButton = screen.getByRole("button", { name: "Close AI mindmap" });
+    const generateButton = screen.getByRole("button", { name: "Generate mindmap" });
+    expect(screen.getByLabelText("Theme")).toHaveFocus();
+
+    closeButton.focus();
+    await user.tab({ shift: true });
+    expect(generateButton).toHaveFocus();
+
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+
+    generateButton.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent("Theme is required.");
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByTestId("mind-elixir-editor")).toHaveAttribute("data-inline-edit-request", "0");
   });
 
   it("dismisses an idle AI modal and preserves its input", async () => {
@@ -730,12 +762,14 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Additional instructions"), "Include research");
     await user.click(screen.getByRole("button", { name: "Close AI mindmap" }));
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI" })).toHaveFocus();
 
     await openAiModal(user);
     expect(screen.getByLabelText("Theme")).toHaveValue("Launch plan");
     expect(screen.getByLabelText("Additional instructions")).toHaveValue("Include research");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI" })).toHaveFocus();
   });
 
   it("dismisses an idle AI modal when its backdrop is pressed", async () => {
@@ -746,6 +780,7 @@ describe("App", () => {
     fireEvent.mouseDown(dialog.parentElement!);
 
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI" })).toHaveFocus();
   });
 
   it("generates a replacement mindmap and restores the previous map with Undo", async () => {
@@ -773,6 +808,7 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Launch plan" })).toBeInTheDocument());
     expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI" })).toHaveFocus();
     expect(fetch).toHaveBeenCalledWith(
       "/api/ai/generate-mindmap",
       expect.objectContaining({

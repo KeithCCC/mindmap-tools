@@ -15,3 +15,14 @@ describe("responsive inspector layout", () => {
     expect(inspectorStyles).toMatch(/bottom:\s*0;/);
   });
 });
+
+describe("AI dialog styling", () => {
+  it("keeps the AI dialog responsive and Properties tabs in four columns", () => {
+    expect(styles).toContain(".ai-dialog-backdrop");
+    expect(styles).toContain(".ai-dialog");
+    expect(styles).toMatch(/\.ai-dialog\s*\{[\s\S]*max-height:\s*calc\(100vh - 48px\)/);
+    expect(styles).toMatch(/\.ai-dialog-content\s*\{[\s\S]*overflow-y:\s*auto/);
+    expect(styles).toMatch(/\.tabs\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, 1fr\)/);
+    expect(styles).toMatch(/@media \(max-width: 900px\)[\s\S]*\.ai-dialog/);
+  });
+});

@@ -599,7 +599,7 @@ h2 {
 .tabs {
   border-bottom: 1px solid #e6ecf5;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .theme-dark .tabs {
@@ -622,6 +622,55 @@ h2 {
 .theme-dark .tabs .tab-active {
   background: #e5e7eb;
   color: #111827;
+}
+
+.ai-dialog-backdrop {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.32);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 80;
+}
+
+.ai-dialog {
+  background: #ffffff;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.25);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100vh - 48px);
+  width: min(520px, calc(100vw - 48px));
+}
+
+.ai-dialog-header {
+  align-items: center;
+  border-bottom: 1px solid #e6ecf5;
+  display: flex;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.ai-dialog-header button {
+  height: 36px;
+  padding: 0;
+  width: 36px;
+}
+
+.ai-dialog-content {
+  display: grid;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.theme-dark .ai-dialog {
+  background: #111827;
+  border-color: #334155;
+  color: #e5e7eb;
 }
 
 .tool-section {
@@ -796,5 +845,14 @@ pre {
     right: 8px;
     top: 0;
     width: auto;
+  }
+
+  .ai-dialog-backdrop {
+    padding: 12px;
+  }
+
+  .ai-dialog {
+    max-height: calc(100vh - 24px);
+    width: calc(100vw - 24px);
   }
 }

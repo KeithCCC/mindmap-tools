@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import vercelConfig from "../vercel.json";
 import { createGenerateMindmapHandler } from "../api/ai/generate-mindmap";
@@ -25,6 +27,19 @@ function createResponse() {
 }
 
 describe("Vercel AI mindmap function", () => {
+  it("uses Node ESM-compatible relative imports in the deployed module chain", () => {
+    const deployedSources = [
+      readFileSync(resolve(process.cwd(), "api/ai/generate-mindmap.ts"), "utf8"),
+      readFileSync(resolve(process.cwd(), "server/openaiMindmap.ts"), "utf8"),
+    ];
+
+    for (const source of deployedSources) {
+      const relativeImports = [...source.matchAll(/from\s+"(\.\.?\/[^"]+)"/g)].map((match) => match[1]);
+      expect(relativeImports.length).toBeGreaterThan(0);
+      expect(relativeImports.every((specifier) => specifier.endsWith(".js"))).toBe(true);
+    }
+  });
+
   it("configures the function duration in vercel.json", () => {
     expect(vercelConfig.functions["api/ai/generate-mindmap.ts"]).toEqual({ maxDuration: 150 });
   });

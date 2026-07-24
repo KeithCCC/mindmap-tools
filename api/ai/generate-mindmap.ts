@@ -1,5 +1,5 @@
-import { AiMindmapError, parseGenerateMindmapInput } from "../../shared/aiMindmap";
-import { generateMindmap } from "../../server/openaiMindmap";
+import { AiMindmapError, parseGenerateMindmapInput } from "../../shared/aiMindmap.js";
+import { generateMindmap } from "../../server/openaiMindmap.js";
 
 type GenerateMindmapFunction = typeof generateMindmap;
 

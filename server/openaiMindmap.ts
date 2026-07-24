@@ -5,7 +5,7 @@ import {
   type GeneratedMindmapNode,
   MINDMAP_JSON_SCHEMA,
   parseGeneratedMindmap,
-} from "../shared/aiMindmap";
+} from "../shared/aiMindmap.js";
 
 export interface ModelGatewayResult {
   status?: string;

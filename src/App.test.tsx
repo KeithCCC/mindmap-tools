@@ -72,6 +72,11 @@ async function openFileMenu(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "File" }));
 }
 
+async function openAiModal(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "AI" }));
+  return screen.getByRole("dialog", { name: "AI mindmap" });
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -707,6 +712,30 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "UX" })).toBeInTheDocument();
   });
 
+  it("opens AI generation from the toolbar instead of Properties", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByRole("tab", { name: "AI" })).not.toBeInTheDocument();
+    await openAiModal(user);
+    expect(screen.getByLabelText("Theme")).toBeInTheDocument();
+  });
+
+  it("dismisses an idle AI modal and preserves its input", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openAiModal(user);
+    await user.type(screen.getByLabelText("Theme"), "Launch plan");
+    await user.click(screen.getByRole("button", { name: "Close AI mindmap" }));
+    expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+
+    await openAiModal(user);
+    expect(screen.getByLabelText("Theme")).toHaveValue("Launch plan");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
+  });
+
   it("generates a replacement mindmap and restores the previous map with Undo", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
@@ -725,13 +754,13 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    await openProperties(user);
-    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await openAiModal(user);
     await user.type(screen.getByLabelText("Theme"), "Launch plan");
     await user.type(screen.getByLabelText("Additional instructions"), "Include research");
     await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Launch plan" })).toBeInTheDocument());
+    expect(screen.queryByRole("dialog", { name: "AI mindmap" })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/ai/generate-mindmap",
       expect.objectContaining({
@@ -751,8 +780,7 @@ describe("App", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await openProperties(user);
-    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await openAiModal(user);
     await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
     expect(screen.getByRole("status")).toHaveTextContent("Theme is required.");
     expect(fetchMock).not.toHaveBeenCalled();
@@ -762,11 +790,14 @@ describe("App", () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     render(<App />);
-    await openProperties(user);
-    await user.click(screen.getByRole("tab", { name: "AI" }));
+    const dialog = await openAiModal(user);
     await user.type(screen.getByLabelText("Theme"), "Plan");
     await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
     expect(screen.getByRole("button", { name: "Generating..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close AI mindmap" })).toBeDisabled();
+    fireEvent.mouseDown(dialog.parentElement!);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "AI mindmap" })).toBeInTheDocument();
   });
 
   it("keeps the current map when generation fails", async () => {
@@ -781,11 +812,11 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    await openProperties(user);
-    await user.click(screen.getByRole("tab", { name: "AI" }));
+    await openAiModal(user);
     await user.type(screen.getByLabelText("Theme"), "Plan");
     await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("OpenAI rate limit or quota was reached."));
+    expect(screen.getByRole("dialog", { name: "AI mindmap" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Brainstorm" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
   });

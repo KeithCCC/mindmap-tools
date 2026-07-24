@@ -31,7 +31,7 @@ const themeStorageKey = "mindmap-tools.theme";
 const appDisplayName = `Futaba (Mindmap) ${__APP_VERSION__}`;
 const buildDisplayText = `Built ${__BUILD_TIMESTAMP__}`;
 
-type Tab = "edit" | "ai" | "cloud" | "import" | "export" | "wiki";
+type Tab = "edit" | "cloud" | "import" | "export" | "wiki";
 type DropPosition = "before" | "after" | "inside";
 type OutlineDropTarget = { id: string; position: DropPosition } | null;
 type MindmapPanDirection = "up" | "down" | "left" | "right";
@@ -287,6 +287,7 @@ export default function App() {
   const [aiInstructions, setAiInstructions] = useState("");
   const [aiStatus, setAiStatus] = useState("Enter a theme to generate a new mindmap.");
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [localFileStatus, setLocalFileStatus] = useState("Local JSON export is ready.");
   const [outlineDropTarget, setOutlineDropTarget] = useState<OutlineDropTarget>(null);
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
@@ -346,21 +347,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isFileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsFileMenuOpen(false);
+        if (!isAiGenerating) setIsAiModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    if (!isFileMenuOpen) {
+      return () => window.removeEventListener("keydown", closeOnEscape);
+    }
     const closeOnOutsidePointer = (event: MouseEvent) => {
       if (event.target instanceof HTMLElement && event.target.closest(".file-menu-wrap")) return;
       setIsFileMenuOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsFileMenuOpen(false);
-    };
     window.addEventListener("mousedown", closeOnOutsidePointer);
-    window.addEventListener("keydown", closeOnEscape);
     return () => {
       window.removeEventListener("mousedown", closeOnOutsidePointer);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [isFileMenuOpen]);
+  }, [isAiGenerating, isFileMenuOpen]);
 
   useEffect(() => {
     if (!findNode(document.root, selectedId)) setSelectedId(document.root.id);
@@ -728,6 +734,7 @@ export default function App() {
       const next = replaceWithGeneratedMindmap(documentStateRef.current, payload.mindmap);
       commitDocument(next, next.root.id);
       setAiStatus(`Generated "${next.title}".`);
+      setIsAiModalOpen(false);
     } catch (error) {
       setAiStatus(error instanceof Error ? error.message : "Mindmap generation failed.");
     } finally {
@@ -736,6 +743,10 @@ export default function App() {
   };
 
   const closeFileMenu = () => setIsFileMenuOpen(false);
+
+  const closeAiModal = () => {
+    if (!isAiGenerating) setIsAiModalOpen(false);
+  };
 
   const allNodes = flattenNodes(document.root);
 
@@ -765,6 +776,9 @@ export default function App() {
           </button>
           <button type="button" onClick={() => setIsOutlineOpen(true)}>
             Outline
+          </button>
+          <button type="button" aria-haspopup="dialog" onClick={() => setIsAiModalOpen(true)}>
+            AI
           </button>
           <button
             type="button"
@@ -843,6 +857,51 @@ export default function App() {
             onSelectedNodeChange={setSelectedId}
             onEditNodeNotes={setNoteEditorNodeId}
           />
+          {isAiModalOpen ? (
+            <div className="ai-dialog-backdrop" role="presentation" onMouseDown={closeAiModal}>
+              <section
+                className="ai-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ai-dialog-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="ai-dialog-header">
+                  <h2 id="ai-dialog-title">AI mindmap</h2>
+                  <button type="button" aria-label="Close AI mindmap" disabled={isAiGenerating} onClick={closeAiModal}>
+                    ×
+                  </button>
+                </div>
+                <div className="ai-dialog-content">
+                  <label>
+                    Theme
+                    <input
+                      value={aiTheme}
+                      maxLength={200}
+                      disabled={isAiGenerating}
+                      onChange={(event) => setAiTheme(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Additional instructions
+                    <textarea
+                      value={aiInstructions}
+                      maxLength={2000}
+                      rows={7}
+                      disabled={isAiGenerating}
+                      onChange={(event) => setAiInstructions(event.target.value)}
+                    />
+                  </label>
+                  <button type="button" disabled={isAiGenerating} onClick={() => void generateAiMindmap()}>
+                    {isAiGenerating ? "Generating..." : "Generate mindmap"}
+                  </button>
+                  <p className="ai-status" role="status" aria-live="polite">
+                    {aiStatus}
+                  </p>
+                </div>
+              </section>
+            </div>
+          ) : null}
           {isOutlineOpen ? (
             <div className="outline-backdrop" role="presentation" onMouseDown={() => setIsOutlineOpen(false)}>
               <section className="outline-dialog" role="dialog" aria-modal="true" aria-label="Semantic outline" onMouseDown={(event) => event.stopPropagation()}>
@@ -958,7 +1017,7 @@ export default function App() {
 
         <aside id="property-inspector" className="side-panel" hidden={!isInspectorOpen}>
           <div className="tabs" role="tablist" aria-label="Mindmap tools">
-            {(["edit", "ai", "import", "export", "wiki"] as Tab[]).map((tab) => (
+            {(["edit", "import", "export", "wiki"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -967,7 +1026,7 @@ export default function App() {
                 className={activeTab === tab ? "tab-active" : ""}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "ai" ? "AI" : tab[0].toUpperCase() + tab.slice(1)}
+                {tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
@@ -1038,36 +1097,6 @@ export default function App() {
                     ))}
                 </select>
               </label>
-            </section>
-          ) : null}
-
-          {activeTab === "ai" ? (
-            <section className="tool-section">
-              <label>
-                Theme
-                <input
-                  value={aiTheme}
-                  maxLength={200}
-                  disabled={isAiGenerating}
-                  onChange={(event) => setAiTheme(event.target.value)}
-                />
-              </label>
-              <label>
-                Additional instructions
-                <textarea
-                  value={aiInstructions}
-                  maxLength={2000}
-                  rows={7}
-                  disabled={isAiGenerating}
-                  onChange={(event) => setAiInstructions(event.target.value)}
-                />
-              </label>
-              <button type="button" disabled={isAiGenerating} onClick={() => void generateAiMindmap()}>
-                {isAiGenerating ? "Generating..." : "Generate mindmap"}
-              </button>
-              <p className="ai-status" role="status" aria-live="polite">
-                {aiStatus}
-              </p>
             </section>
           ) : null}
 

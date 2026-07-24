@@ -464,14 +464,15 @@ export default function App() {
           const first = focusableElements[0];
           const last = focusableElements[focusableElements.length - 1];
           const activeElement = window.document.activeElement;
+          const focusIsOutsideCycle = activeElement === dialog || !dialog?.contains(activeElement);
 
           if (!first || !last) {
             event.preventDefault();
             dialog?.focus();
-          } else if (event.shiftKey && (activeElement === first || !dialog?.contains(activeElement))) {
+          } else if (event.shiftKey && (activeElement === first || focusIsOutsideCycle)) {
             event.preventDefault();
             last.focus();
-          } else if (!event.shiftKey && (activeElement === last || !dialog?.contains(activeElement))) {
+          } else if (!event.shiftKey && (activeElement === last || focusIsOutsideCycle)) {
             event.preventDefault();
             first.focus();
           }

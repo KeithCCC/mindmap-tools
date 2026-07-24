@@ -848,6 +848,40 @@ describe("App", () => {
     expect(screen.getByRole("dialog", { name: "AI mindmap" })).toBeInTheDocument();
   });
 
+  it("keeps focus trapped after failed generation re-enables modal controls", async () => {
+    const user = userEvent.setup();
+    let rejectRequest!: (reason?: unknown) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            rejectRequest = reject;
+          }),
+      ),
+    );
+    render(<App />);
+
+    const dialog = await openAiModal(user);
+    await user.type(screen.getByLabelText("Theme"), "Plan");
+    await user.click(screen.getByRole("button", { name: "Generate mindmap" }));
+    await user.tab();
+    expect(dialog).toHaveFocus();
+
+    rejectRequest(new Error("Network unavailable."));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Network unavailable."));
+    expect(dialog).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Generate mindmap" })).toHaveFocus();
+    expect(dialog).toContainElement(window.document.activeElement as HTMLElement);
+
+    dialog.focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close AI mindmap" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
+
   it("keeps the current map when generation fails", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(

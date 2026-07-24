@@ -673,6 +673,10 @@ h2 {
   color: #e5e7eb;
 }
 
+.theme-dark .ai-dialog-header {
+  border-bottom-color: #334155;
+}
+
 .tool-section {
   display: grid;
   gap: 12px;
